@@ -2,6 +2,8 @@
 
 多环境中间件连接管理桌面应用，统一对外提供 MCP（Model Context Protocol）能力。
 
+[English](README.en.md)
+
 ## 功能
 
 - **中间件连接**：按适配器 schema 配置连接，通过名称区分环境（如 prod-loki）
