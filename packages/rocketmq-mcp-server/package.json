@@ -1,0 +1,27 @@
+{
+  "name": "@middle-tool/rocketmq-mcp-server",
+  "version": "0.1.0",
+  "description": "MiddleTool RocketMQ 专用 MCP Server — 内置 Java Admin 桥接，自动启动",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "middle-tool-rocketmq-mcp-server": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "java:build": "node scripts/build-java.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

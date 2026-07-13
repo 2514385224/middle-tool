@@ -1,0 +1,28 @@
+{
+  "name": "@middle-tool/mcp-server",
+  "version": "0.1.0",
+  "description": "MiddleTool 统一 MCP Server — 自动读取桌面端已配置的中间件连接",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "middle-tool-mcp-server": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "mysql2": "^3.14.1",
+    "mongodb": "^6.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,27 @@
+{
+  "name": "@middle-tool/mysql-mcp-server",
+  "version": "0.1.0",
+  "description": "MiddleTool MySQL MCP Server — 读取桌面端连接配置，提供 mysql_query 等能力",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "middle-tool-mysql-mcp-server": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "mysql2": "^3.14.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

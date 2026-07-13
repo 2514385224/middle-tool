@@ -1,0 +1,26 @@
+{
+  "name": "@middle-tool/redis-mcp-server",
+  "version": "0.1.0",
+  "description": "MiddleTool Redis MCP Server — 读取桌面端连接配置，代理官方 redis/mcp-redis 能力",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "middle-tool-redis-mcp-server": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

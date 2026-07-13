@@ -1,0 +1,220 @@
+.catalog-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.catalog-section-title {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 10px;
+}
+
+.catalog-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.catalog-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  padding: 16px 18px;
+}
+
+.catalog-card-head {
+  margin-bottom: 10px;
+}
+
+.catalog-card-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.catalog-card-type {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--accent);
+  letter-spacing: 0.02em;
+}
+
+.catalog-card-name {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.catalog-card-desc {
+  margin-top: 6px;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.catalog-card-repo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: var(--text-xs);
+}
+
+.catalog-card-repo-label {
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+.catalog-card-repo-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.12s, color 0.12s;
+}
+
+.catalog-card-repo-link:hover {
+  color: var(--text);
+  border-bottom-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.catalog-card-repo-host {
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.catalog-card-repo-path {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 420px;
+}
+
+.catalog-card-repo-link:hover .catalog-card-repo-path {
+  color: var(--text);
+}
+
+.catalog-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 12px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.catalog-meta-item strong {
+  font-family: var(--font-mono);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.catalog-meta-sub {
+  color: var(--text-faint);
+}
+
+.catalog-conn-list {
+  list-style: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.catalog-conn-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg);
+}
+
+.catalog-conn-row + .catalog-conn-row {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.catalog-conn-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.catalog-conn-name {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.catalog-conn-preview {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.catalog-conn-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.catalog-conn-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.catalog-conn-status.is-ok .catalog-conn-dot {
+  background: #22c55e;
+}
+
+.catalog-conn-status.is-error .catalog-conn-dot {
+  background: #f87171;
+}
+
+.catalog-conn-status.is-checking .catalog-conn-dot {
+  background: var(--accent);
+}
+
+.catalog-conn-status.is-skipped .catalog-conn-dot {
+  background: #f59e0b;
+}
+
+.catalog-conn-detail {
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+}
+
+.catalog-conn-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.catalog-empty-conn {
+  margin-bottom: 0;
+  font-size: var(--text-sm);
+  color: var(--text-faint);
+}

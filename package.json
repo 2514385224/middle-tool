@@ -1,0 +1,90 @@
+{
+  "name": "middle-tool",
+  "version": "0.1.0",
+  "description": "多环境中间件连接管理，统一提供 MCP 能力",
+  "main": "./out/main/index.js",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "pack": "npm run build:win",
+    "build:win": "npm run mcp:build && npm run rocketmq-mcp:java:build && npm run build && node scripts/prepare-pack-resources.mjs && electron-builder --win",
+    "typecheck": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
+    "mcp:build": "npm run build -w @middle-tool/mcp-server && node scripts/sync-mcp-runtime.mjs",
+    "mcp-server:build": "npm run build -w @middle-tool/mcp-server",
+    "rocketmq-mcp-server:build": "npm run build -w @middle-tool/rocketmq-mcp-server",
+    "rocketmq-mcp:java:build": "npm run java:build -w @middle-tool/rocketmq-mcp-server",
+    "mcp-server:start": "npm run start -w @middle-tool/mcp-server",
+    "mysql-mcp-server:build": "npm run build -w @middle-tool/mysql-mcp-server",
+    "mysql-mcp-server:start": "npm run start -w @middle-tool/mysql-mcp-server",
+    "redis-mcp-server:build": "npm run build -w @middle-tool/redis-mcp-server",
+    "redis-mcp-server:start": "npm run start -w @middle-tool/redis-mcp-server",
+    "mcp:verify": "node scripts/verify-mcp.mjs",
+    "postinstall": "npm run mcp:build"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "dependencies": {
+    "electron-store": "^8.2.0",
+    "mysql2": "^3.14.1",
+    "mongodb": "^6.16.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "uuid": "^11.0.3"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/uuid": "^10.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11"
+  },
+  "build": {
+    "appId": "com.middletool.app",
+    "productName": "MiddleTool",
+    "copyright": "Copyright © 2026 MiddleTool",
+    "directories": {
+      "output": "release",
+      "buildResources": "resources"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "extraResources": [
+      {
+        "from": "build-resources/mcp-server",
+        "to": "mcp-server",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MiddleTool",
+      "installerLanguages": ["zh_CN", "en_US"],
+      "language": "2052"
+    }
+  }
+}

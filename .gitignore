@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+out/
+release/
+build-resources/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Env
+.env
+.env.local
+
+# Electron
+*.tsbuildinfo
+
+# User data (dev)
+data/
+
+# RocketMQ MCP Java bridge (built locally)
+packages/rocketmq-mcp-server/vendor/
+packages/rocketmq-mcp-server/runtime/*.jar

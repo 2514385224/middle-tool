@@ -1,0 +1,17 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/server.schema.json",
+  "name": "middle-tool",
+  "title": "MiddleTool MCP Server",
+  "description": "Unified MCP server for MiddleTool — query Loki and other middleware using connections configured in the desktop app.",
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@middle-tool/mcp-server",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}
