@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AdapterMeta, ConnectionTestResult, MiddlewareConnection } from '../types'
 import { ADAPTER_CATEGORY_LABELS, ADAPTER_STATUS_LABELS, isAdapterOperational } from '../types'
 import { useConnections } from '../hooks/useData'
 import { getConnectionPreview } from '../components/connection/connectionUtils'
 import './MiddlewareCatalog.css'
+
+const CHECK_CONCURRENCY = 6
 
 function formatRepoRef(url: string): { host: string; path: string } {
   try {
@@ -27,6 +29,30 @@ interface ConnectionCheck {
   result?: ConnectionTestResult
 }
 
+function connectionTestKey(type: string, config: Record<string, string>): string {
+  const entries = Object.keys(config)
+    .sort()
+    .map((key) => `${key}=${config[key] ?? ''}`)
+    .join('\0')
+  return `${type}\0${entries}`
+}
+
+async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  if (items.length === 0) return []
+  const results = new Array<R>(items.length)
+  let index = 0
+
+  async function worker() {
+    while (index < items.length) {
+      const current = index++
+      results[current] = await fn(items[current])
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()))
+  return results
+}
+
 export default function MiddlewareCatalog() {
   const { connections } = useConnections()
   const [adapters, setAdapters] = useState<AdapterMeta[]>([])
@@ -34,6 +60,7 @@ export default function MiddlewareCatalog() {
   const [error, setError] = useState<string | null>(null)
   const [checks, setChecks] = useState<Record<string, ConnectionCheck>>({})
   const [checkingAll, setCheckingAll] = useState(false)
+  const checkRunRef = useRef(0)
 
   useEffect(() => {
     window.middleTool.adapter
@@ -72,7 +99,7 @@ export default function MiddlewareCatalog() {
     }
 
     try {
-      const result = await window.middleTool.conn.test(conn.type, conn.config)
+      const result = await window.middleTool.conn.test(conn.type, conn.config, { quick: true })
       return { status: result.ok ? 'ok' : 'error', result }
     } catch (err) {
       return {
@@ -82,40 +109,67 @@ export default function MiddlewareCatalog() {
     }
   }, [adapterMap])
 
-  const setCheckState = (connId: string, check: ConnectionCheck) => {
-    setChecks((prev) => ({ ...prev, [connId]: check }))
-  }
-
   const runAllChecks = useCallback(async () => {
     if (connections.length === 0) return
 
+    const runId = ++checkRunRef.current
     setCheckingAll(true)
-    const enabled = connections.filter((c) => {
-      const adapter = adapterMap.get(c.type)
-      return c.enabled && adapter && isAdapterOperational(adapter)
-    })
 
+    const initial: Record<string, ConnectionCheck> = {}
     for (const conn of connections) {
       if (!conn.enabled) {
-        setCheckState(conn.id, { status: 'skipped', result: { ok: false, message: '连接已禁用' } })
-      } else {
-        setCheckState(conn.id, { status: 'checking' })
+        initial[conn.id] = { status: 'skipped', result: { ok: false, message: '连接已禁用' } }
+        continue
       }
+      const adapter = adapterMap.get(conn.type)
+      if (!adapter || !isAdapterOperational(adapter)) {
+        initial[conn.id] = { status: 'skipped', result: { ok: false, message: '适配器不可用' } }
+        continue
+      }
+      initial[conn.id] = { status: 'checking' }
     }
+    setChecks(initial)
 
+    const enabled = connections.filter((conn) => initial[conn.id]?.status === 'checking')
+    const grouped = new Map<string, MiddlewareConnection[]>()
     for (const conn of enabled) {
-      const check = await runCheck(conn)
-      setCheckState(conn.id, check)
+      const key = connectionTestKey(conn.type, conn.config)
+      const list = grouped.get(key)
+      if (list) list.push(conn)
+      else grouped.set(key, [conn])
     }
 
-    setCheckingAll(false)
-  }, [connections, runCheck])
+    const uniqueKeys = Array.from(grouped.keys())
+
+    await mapPool(uniqueKeys, CHECK_CONCURRENCY, async (key) => {
+      if (checkRunRef.current !== runId) return
+      const sample = grouped.get(key)?.[0]
+      if (!sample) return
+      const check = await runCheck(sample)
+
+      if (checkRunRef.current !== runId) return
+      setChecks((prev) => {
+        const next = { ...prev }
+        for (const conn of grouped.get(key) ?? []) {
+          next[conn.id] = check
+        }
+        return next
+      })
+    })
+
+    if (checkRunRef.current === runId) {
+      setCheckingAll(false)
+    }
+  }, [connections, adapterMap, runCheck])
 
   const handleCheckAll = () => runAllChecks()
 
   useEffect(() => {
     if (loading || adapters.length === 0) return
     runAllChecks()
+    return () => {
+      checkRunRef.current += 1
+    }
   }, [loading, adapters.length, connectionFingerprint, runAllChecks])
 
   const statusLabel = (check?: ConnectionCheck) => {

@@ -1,5 +1,4 @@
 import {
-  buildRedisUrl,
   getElasticsearchCredentials,
   getLokiCredentials,
   getMysqlCredentials,
@@ -36,6 +35,7 @@ import {
   isRedisProxiedTool
 } from './redis-proxy.js'
 import * as rocketmq from './rocketmq-admin-client.js'
+import { assertMcpWriteAllowed } from './tool-policy.js'
 
 type ToolResult = {
   content: Array<{ type: string; text?: string; [key: string]: unknown }>
@@ -61,6 +61,7 @@ function summaryPayload(
 
 export async function handleToolCall(name: string, args: Record<string, unknown>): Promise<ToolResult> {
   const data = readAppData()
+  assertMcpWriteAllowed(name, data.settings, args)
 
   switch (name) {
     case 'middle_list_environments':
@@ -355,8 +356,7 @@ export async function handleToolCall(name: string, args: Record<string, unknown>
   if (isRedisProxiedTool(name)) {
     const { connectionArgs, toolArgs } = extractConnectionArgs(args)
     const { connection } = resolveTypedConnection(data, connectionArgs, 'redis', listRedisConnectionSummaries)
-    const url = buildRedisUrl(getRedisCredentials(connection))
-    return callUpstreamTool(url, name, toolArgs)
+    return callUpstreamTool(getRedisCredentials(connection), name, toolArgs)
   }
 
   const rocketmqCreds = () => {
@@ -423,8 +423,14 @@ export async function handleToolCall(name: string, args: Record<string, unknown>
       )
     }
     case 'rocketmq_producer_info': {
-      if (!args.producer_group) throw new Error('producer_group 参数必填')
-      return textResult(await rocketmq.producerInfo(rocketmqCreds(), args.producer_group as string))
+      if (!args.producer_group || !args.topic) throw new Error('producer_group 与 topic 参数必填')
+      return textResult(
+        await rocketmq.producerInfo(
+          rocketmqCreds(),
+          args.producer_group as string,
+          args.topic as string
+        )
+      )
     }
     case 'rocketmq_producer_list':
       return textResult(await rocketmq.producerList(rocketmqCreds()))

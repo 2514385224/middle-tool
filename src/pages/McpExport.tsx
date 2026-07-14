@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { McpExportMeta, UvxDetectResult } from '../types'
+import type { AppSettings, McpExportMeta, UvxDetectResult } from '../types'
 import './McpExport.css'
 
 interface ClientConfig {
@@ -35,18 +35,22 @@ export default function McpExport() {
   const [copiedUvxPath, setCopiedUvxPath] = useState(false)
   const [writing, setWriting] = useState(false)
   const [writeMessage, setWriteMessage] = useState<string | null>(null)
+  const [settings, setSettings] = useState<AppSettings | null>(null)
+  const [settingsSaving, setSettingsSaving] = useState(false)
 
   const loadConfig = useCallback(async () => {
     setLoading(true)
     try {
-      const [json, meta, uvx] = await Promise.all([
+      const [json, meta, uvx, appSettings] = await Promise.all([
         window.middleTool.mcp.exportUnifiedConfig(),
         window.middleTool.mcp.getExportMeta(),
-        window.middleTool.mcp.detectUvx()
+        window.middleTool.mcp.detectUvx(),
+        window.middleTool.settings.get()
       ])
       setConfigJson(json)
       setExportMeta(meta)
       setUvxStatus(uvx)
+      setSettings(appSettings)
     } finally {
       setLoading(false)
     }
@@ -78,6 +82,21 @@ export default function McpExport() {
     await navigator.clipboard.writeText(uvx.path)
     setCopiedUvxPath(true)
     setTimeout(() => setCopiedUvxPath(false), 2000)
+  }
+
+  const handleToggleMcpWrite = async () => {
+    if (!settings || settingsSaving) return
+    setSettingsSaving(true)
+    try {
+      const next = await window.middleTool.settings.update({
+        mcpWriteEnabled: !settings.mcpWriteEnabled
+      })
+      setSettings(next)
+    } catch (err) {
+      console.error('更新 MCP 写权限失败', err)
+    } finally {
+      setSettingsSaving(false)
+    }
   }
 
   const handleWriteFile = async () => {
@@ -124,6 +143,30 @@ export default function McpExport() {
           ))}
         </div>
       </header>
+
+      <section className="mcp-write-policy" aria-label="MCP 写权限">
+        <div className="mcp-write-policy-head">
+          <div>
+            <h3>MCP 写权限</h3>
+            <p className="mcp-write-policy-desc">
+              关闭时，所有 MCP 工具仅允许读操作（MySQL 查询、Redis GET、Loki 查询等）；写操作会被拦截且不出现在工具列表中。
+            </p>
+          </div>
+          <label className="mcp-write-toggle">
+            <input
+              type="checkbox"
+              checked={settings?.mcpWriteEnabled === true}
+              disabled={!settings || settingsSaving || loading}
+              onChange={handleToggleMcpWrite}
+            />
+            <span>允许 MCP 写入</span>
+          </label>
+        </div>
+        <p className={`mcp-write-policy-status ${settings?.mcpWriteEnabled ? 'is-on' : 'is-off'}`}>
+          当前模式：{settings?.mcpWriteEnabled ? '读写' : '只读'}
+          {!settings?.mcpWriteEnabled && ' · MySQL/Redis 等写操作已禁用'}
+        </p>
+      </section>
 
       {exportMeta && exportMeta.notes.length > 0 && (
         <section className="mcp-export-notes" aria-label="导出说明">

@@ -20,6 +20,14 @@ type RedisProxyModule = {
   listProxiedTools: () => Promise<McpToolDefinition[]>
 }
 
+type ToolPolicyModule = {
+  filterToolsByWritePolicy: <T extends { name: string }>(
+    tools: T[],
+    settings?: Record<string, unknown> | { mcpWriteEnabled?: boolean } | null
+  ) => T[]
+}
+
+let toolPolicyModule: ToolPolicyModule | null = null
 let handlers: ToolHandlers | null = null
 let toolsModule: ToolsModule | null = null
 let redisProxyModule: RedisProxyModule | null = null
@@ -33,6 +41,13 @@ function resolveMcpServerRoot(): string {
 async function importMcpModule<T>(relativePath: string): Promise<T> {
   const filePath = path.join(resolveMcpServerRoot(), 'dist', relativePath)
   return (await import(pathToFileURL(filePath).href)) as T
+}
+
+async function getToolPolicyModule(): Promise<ToolPolicyModule> {
+  if (!toolPolicyModule) {
+    toolPolicyModule = await importMcpModule<ToolPolicyModule>('tool-policy.js')
+  }
+  return toolPolicyModule
 }
 
 async function getHandlers(): Promise<ToolHandlers> {
@@ -60,8 +75,11 @@ function withConfigPath(configStore: ConfigStore): void {
   process.env.MIDDLE_TOOL_CONFIG_PATH = configStore.getConfigPath()
 }
 
-export async function listMcpTools(): Promise<McpToolDefinition[]> {
+export async function listMcpTools(configStore: ConfigStore): Promise<McpToolDefinition[]> {
+  withConfigPath(configStore)
   const { staticTools } = await getToolsModule()
+  const { filterToolsByWritePolicy } = await getToolPolicyModule()
+  const settings = configStore.getSettings()
 
   try {
     const { listProxiedTools } = await getRedisProxyModule()
@@ -71,10 +89,10 @@ export async function listMcpTools(): Promise<McpToolDefinition[]> {
         setTimeout(() => reject(new Error('Redis tools 探测超时')), 8_000)
       })
     ])
-    return [...staticTools, ...redisTools]
+    return filterToolsByWritePolicy([...staticTools, ...redisTools], settings)
   } catch (err) {
     console.error('[mcp-tool-runner] Redis tools 加载失败，仅返回静态 tools:', err)
-    return staticTools
+    return filterToolsByWritePolicy(staticTools, settings)
   }
 }
 

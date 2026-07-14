@@ -1,5 +1,7 @@
 import type { MiddlewareType } from './adapter'
 
+import type { AppSettings } from './settings'
+
 /** 环境定义 */
 export interface Environment {
   id: string
@@ -25,4 +27,5 @@ export interface MiddlewareConnection {
 export interface AppData {
   environments: Environment[]
   connections: MiddlewareConnection[]
+  settings?: AppSettings
 }

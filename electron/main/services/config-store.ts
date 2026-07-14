@@ -5,7 +5,8 @@ import {
   serializeConfigExport,
   type ConfigImportResult
 } from '../../../shared/config-export'
-import type { AppData, Environment, MiddlewareConnection } from '../../../shared/types'
+import type { AppData, AppSettings, Environment, MiddlewareConnection } from '../../../shared/types'
+import { DEFAULT_APP_SETTINGS, normalizeAppSettings } from '../../../shared/types/settings'
 
 const DEFAULT_ENV_NAME = '默认'
 
@@ -20,7 +21,8 @@ const DEFAULT_DATA: AppData = {
       updatedAt: new Date().toISOString()
     }
   ],
-  connections: []
+  connections: [],
+  settings: { ...DEFAULT_APP_SETTINGS }
 }
 
 export class ConfigStore {
@@ -163,10 +165,21 @@ export class ConfigStore {
     return true
   }
 
+  getSettings(): AppSettings {
+    return normalizeAppSettings(this.store.get('settings'))
+  }
+
+  updateSettings(input: Partial<AppSettings>): AppSettings {
+    const next = normalizeAppSettings({ ...this.getSettings(), ...input })
+    this.store.set('settings', next)
+    return next
+  }
+
   getAppData(): AppData {
     return {
       environments: this.listEnvironments(),
-      connections: this.listConnections()
+      connections: this.listConnections(),
+      settings: this.getSettings()
     }
   }
 
@@ -177,6 +190,7 @@ export class ConfigStore {
   replaceAll(data: AppData): void {
     this.store.set('environments', data.environments)
     this.store.set('connections', data.connections)
+    this.store.set('settings', normalizeAppSettings(data.settings))
   }
 
   importConfig(
@@ -207,7 +221,11 @@ export class ConfigStore {
         }
       }
 
-      this.replaceAll({ environments, connections: imported.connections })
+      this.replaceAll({
+        environments,
+        connections: imported.connections,
+        settings: imported.settings
+      })
       result.environmentsAdded = environments.length
       result.connectionsAdded = imported.connections.length
       return result

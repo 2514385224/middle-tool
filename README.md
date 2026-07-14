@@ -75,6 +75,45 @@ RocketMQ 由 MiddleTool 桌面端 **内嵌托管 Java Admin 桥接**（安装包
 
 详见 [packages/mcp-server/README.md](packages/mcp-server/README.md)。
 
+### Linux 解压部署（对外 IP:端口）
+
+适用于无桌面环境的服务器，统一对外提供 MCP HTTP/SSE 服务：
+
+```bash
+npm run build:linux-mcp
+# 产物: release/middle-tool-mcp-linux-x64-*.tar.gz
+
+tar -xzf release/middle-tool-mcp-linux-x64-*.tar.gz
+cd middle-tool-mcp
+cp config/middle-tool-config.json.example config/middle-tool-config.json
+# 编辑连接配置后启动
+chmod +x bin/start.sh
+./bin/start.sh
+```
+
+默认监听 `0.0.0.0:8080`：
+
+| 端点 | 地址 |
+|------|------|
+| Streamable HTTP | `http://<IP>:8080/mcp` |
+| Legacy SSE | `http://<IP>:8080/sse` |
+| 健康检查 | `http://<IP>:8080/health` |
+
+详见 [deploy/linux/README.md](deploy/linux/README.md)。
+
+### Docker 部署
+
+```bash
+cd deploy/docker
+cp ../linux/config/middle-tool-config.json.example config/middle-tool-config.json
+# 编辑 config/middle-tool-config.json
+
+docker compose up -d --build
+# 或项目根目录: npm run docker:up
+```
+
+详见 [deploy/docker/README.md](deploy/docker/README.md)。
+
 ## 项目结构
 
 ```
@@ -100,6 +139,7 @@ MiddleTool/
 
 ```bash
 npm run build
+npm run build:linux-mcp   # Linux MCP 解压包
 ```
 
 ### Windows 安装包（.exe）

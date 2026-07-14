@@ -238,11 +238,15 @@ export const staticTools = [
   },
   {
     name: 'rocketmq_producer_info',
-    description: '查询生产者组连接信息',
+    description: '查询生产者组连接信息（需指定 topic）',
     inputSchema: {
       type: 'object' as const,
-      required: ['producer_group'],
-      properties: { producer_group: { type: 'string' }, ...connectionParams }
+      required: ['producer_group', 'topic'],
+      properties: {
+        producer_group: { type: 'string' },
+        topic: { type: 'string' },
+        ...connectionParams
+      }
     }
   },
   {

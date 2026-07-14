@@ -1,0 +1,17 @@
+node_modules
+out
+release
+build-resources
+.git
+.github
+.gitee
+.cursor
+electron
+src
+dist
+*.log
+.env
+.env.*
+config/import-from-mcp-secrets.json
+packages/rocketmq-mcp-server/vendor
+terminals

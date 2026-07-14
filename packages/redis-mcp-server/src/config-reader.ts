@@ -199,6 +199,19 @@ export function buildRedisUrl(creds: RedisCredentials): string {
   return query ? `${base}?${query}` : base
 }
 
+/** redis-mcp-server 的 --url 对含特殊字符的密码解析不可靠，改用独立 CLI 参数 */
+export function buildRedisSpawnArgs(creds: RedisCredentials): string[] {
+  const args = ['--host', creds.host, '--port', String(creds.port), '--db', String(creds.db)]
+
+  if (creds.username) args.push('--username', creds.username)
+  if (creds.password) args.push('--password', creds.password)
+  if (creds.ssl) args.push('--ssl')
+  if (creds.sslCaPath) args.push('--ssl-ca-path', creds.sslCaPath)
+  if (creds.clusterMode) args.push('--cluster-mode')
+
+  return args
+}
+
 export interface RedisConnectionSummary {
   id: string
   name: string

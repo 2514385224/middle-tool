@@ -1,7 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
   AdapterMeta,
+  AppSettings,
   ConfigImportResult,
+  ConnectionTestOptions,
   ConnectionTestResult,
   DashboardStatus,
   Environment,
@@ -36,7 +38,11 @@ export interface MiddleToolAPI {
       input: Partial<Pick<MiddlewareConnection, 'name' | 'enabled' | 'config' | 'environmentId'>>
     ) => Promise<MiddlewareConnection | null>
     delete: (id: string) => Promise<boolean>
-    test: (type: MiddlewareType, config: Record<string, string>) => Promise<ConnectionTestResult>
+    test: (
+      type: MiddlewareType,
+      config: Record<string, string>,
+      options?: ConnectionTestOptions
+    ) => Promise<ConnectionTestResult>
   }
   adapter: {
     list: () => Promise<AdapterMeta[]>
@@ -68,6 +74,10 @@ export interface MiddleToolAPI {
   system: {
     status: () => Promise<DashboardStatus>
   }
+  settings: {
+    get: () => Promise<AppSettings>
+    update: (input: Partial<AppSettings>) => Promise<AppSettings>
+  }
   pack: {
     info: () => Promise<PackInfo>
     buildWin: () => Promise<PackBuildResult>
@@ -87,7 +97,7 @@ const api: MiddleToolAPI = {
     create: (input) => ipcRenderer.invoke('conn:create', input),
     update: (id, input) => ipcRenderer.invoke('conn:update', id, input),
     delete: (id) => ipcRenderer.invoke('conn:delete', id),
-    test: (type, config) => ipcRenderer.invoke('conn:test', type, config)
+    test: (type, config, options) => ipcRenderer.invoke('conn:test', type, config, options)
   },
   adapter: {
     list: () => ipcRenderer.invoke('adapter:list'),
@@ -110,6 +120,10 @@ const api: MiddleToolAPI = {
   },
   system: {
     status: () => ipcRenderer.invoke('system:status')
+  },
+  settings: {
+    get: () => ipcRenderer.invoke('settings:get'),
+    update: (input) => ipcRenderer.invoke('settings:update', input)
   },
   pack: {
     info: () => ipcRenderer.invoke('pack:info'),

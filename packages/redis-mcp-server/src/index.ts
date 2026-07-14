@@ -4,7 +4,6 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 
 import {
-  buildRedisUrl,
   getDefaultConfigPath,
   getRedisCredentials,
   listRedisConnectionSummaries,
@@ -52,9 +51,9 @@ function resolveFromConnectionArgs(args: Record<string, unknown>) {
   })
 }
 
-function buildUrlFromArgs(args: Record<string, unknown>): string {
+function resolveCredsFromConnectionArgs(args: Record<string, unknown>) {
   const { connection } = resolveFromConnectionArgs(args)
-  return buildRedisUrl(getRedisCredentials(connection))
+  return getRedisCredentials(connection)
 }
 
 async function main() {
@@ -98,8 +97,8 @@ async function main() {
       }
 
       const { connectionArgs, toolArgs } = extractConnectionArgs(a)
-      const url = buildUrlFromArgs(connectionArgs)
-      const result = await callUpstreamTool(url, name, toolArgs)
+      const creds = resolveCredsFromConnectionArgs(connectionArgs)
+      const result = await callUpstreamTool(creds, name, toolArgs)
       return result
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

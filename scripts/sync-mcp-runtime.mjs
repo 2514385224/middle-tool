@@ -3,18 +3,25 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { ROCKETMQ_JAR_DEST, resolveRocketmqJarSource } from './resolve-rocketmq-jar.mjs'
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '..')
-
-const srcJar = path.join(root, 'packages', 'rocketmq-mcp-server', 'runtime', 'rocketmq-mcp.jar')
 const destDir = path.join(root, 'packages', 'mcp-server', 'runtime')
 const destJar = path.join(destDir, 'rocketmq-mcp.jar')
 
-if (!fs.existsSync(srcJar)) {
-  console.warn('[sync-mcp-runtime] 跳过：未找到 rocketmq-mcp.jar，请先运行 npm run rocketmq-mcp:java:build')
+const srcJar = resolveRocketmqJarSource()
+
+if (!srcJar) {
+  console.warn('[sync-mcp-runtime] 跳过：未找到 rocketmq-mcp.jar，请先运行 npm run rocketmq-mcp:java:stage')
   process.exit(0)
 }
 
 fs.mkdirSync(destDir, { recursive: true })
 fs.copyFileSync(srcJar, destJar)
-console.log('[sync-mcp-runtime] 已同步 → packages/mcp-server/runtime/rocketmq-mcp.jar')
+console.log(`[sync-mcp-runtime] 已同步 → ${destJar}`)
+
+if (path.normalize(srcJar) !== path.normalize(ROCKETMQ_JAR_DEST) && !fs.existsSync(ROCKETMQ_JAR_DEST)) {
+  fs.mkdirSync(path.dirname(ROCKETMQ_JAR_DEST), { recursive: true })
+  fs.copyFileSync(srcJar, ROCKETMQ_JAR_DEST)
+}

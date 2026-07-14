@@ -365,12 +365,16 @@ async function main() {
           }
         }
         case 'rocketmq_producer_info': {
-          if (!a.producer_group) throw new Error('producer_group 参数必填')
+          if (!a.producer_group || !a.topic) throw new Error('producer_group 与 topic 参数必填')
           return {
             content: [
               {
                 type: 'text',
-                text: await admin.producerInfo(credsFromArgs(a), a.producer_group as string)
+                text: await admin.producerInfo(
+                  credsFromArgs(a),
+                  a.producer_group as string,
+                  a.topic as string
+                )
               }
             ]
           }

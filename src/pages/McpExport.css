@@ -10,6 +10,72 @@
   gap: 12px;
 }
 
+.mcp-write-policy {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  padding: 14px 16px;
+}
+
+.mcp-write-policy-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 20px;
+}
+
+.mcp-write-policy-head h3 {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.mcp-write-policy-desc {
+  margin: 0;
+  max-width: 640px;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.mcp-write-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-sm);
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.mcp-write-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.mcp-write-toggle input:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.mcp-write-policy-status {
+  margin: 10px 0 0;
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+}
+
+.mcp-write-policy-status.is-off {
+  color: var(--text-muted);
+}
+
+.mcp-write-policy-status.is-on {
+  color: var(--accent);
+}
+
 .mcp-export-notes {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);

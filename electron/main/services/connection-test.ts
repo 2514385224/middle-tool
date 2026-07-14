@@ -1,12 +1,60 @@
 import net from 'node:net'
 import tls from 'node:tls'
 import https from 'node:https'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import mysql from 'mysql2/promise'
 import { MongoClient } from 'mongodb'
 
-import type { ConnectionTestResult } from '../../../shared/types/system'
+import type { ConnectionTestOptions, ConnectionTestResult } from '../../../shared/types/system'
 import { getAdapter } from '../adapters/registry'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+function tcpPortOpen(host: string, port: number, timeoutMs: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host, port })
+    const timer = setTimeout(() => {
+      socket.destroy()
+      resolve(false)
+    }, timeoutMs)
+
+    socket.once('connect', () => {
+      clearTimeout(timer)
+      socket.destroy()
+      resolve(true)
+    })
+    socket.once('error', () => {
+      clearTimeout(timer)
+      resolve(false)
+    })
+  })
+}
+
+async function healthCheckAdmin(baseUrl: string, timeoutMs: number): Promise<boolean> {
+  const url = new URL(baseUrl)
+  const host = url.hostname
+  const port = url.port ? Number(url.port) : url.protocol === 'https:' ? 443 : 80
+  return tcpPortOpen(host, port, timeoutMs)
+}
+
+const TIMEOUT_MS = { quick: 8_000, full: 10_000 } as const
+const REDIS_TIMEOUT_MS = { quick: 8_000, full: 10_000 } as const
+const ROCKETMQ_TIMEOUT_MS = { quick: 8_000, full: 30_000 } as const
+
+let insecureHttpsAgent: https.Agent | undefined
+
+function resolveTimeout(options: ConnectionTestOptions | undefined, full = TIMEOUT_MS.full): number {
+  return options?.quick ? TIMEOUT_MS.quick : full
+}
+
+function getInsecureHttpsAgent(): https.Agent {
+  if (!insecureHttpsAgent) {
+    insecureHttpsAgent = new https.Agent({ rejectUnauthorized: false, keepAlive: true })
+  }
+  return insecureHttpsAgent
+}
 
 function buildLokiHeaders(config: Record<string, string>): Record<string, string> {
   const headers: Record<string, string> = { Accept: 'application/json' }
@@ -28,19 +76,20 @@ function respCommand(...args: string[]): string {
   return payload
 }
 
-function readRedisResponse(buffer: Buffer): string {
+function readRedisSimpleLine(buffer: Buffer): { line: string; rest: Buffer } | null {
   const text = buffer.toString('utf-8')
-  if (text.startsWith('+')) return text.slice(1).split('\r\n')[0]
-  if (text.startsWith('-')) throw new Error(text.slice(1).split('\r\n')[0])
-  if (text.startsWith('$')) {
-    const line = text.split('\r\n')[0]
-    if (line === '$-1') return ''
-    return text.split('\r\n')[1] ?? ''
+  const end = text.indexOf('\r\n')
+  if (end < 0) return null
+  return {
+    line: text.slice(0, end),
+    rest: buffer.subarray(end + 2)
   }
-  return text.trim()
 }
 
-async function redisPing(config: Record<string, string>): Promise<ConnectionTestResult> {
+async function redisPing(
+  config: Record<string, string>,
+  options?: ConnectionTestOptions
+): Promise<ConnectionTestResult> {
   const host = config.host?.trim()
   if (!host) return { ok: false, message: 'Host 不能为空' }
 
@@ -60,86 +109,99 @@ async function redisPing(config: Record<string, string>): Promise<ConnectionTest
   const useTls = config.ssl === 'yes'
   const username = config.username?.trim()
   const password = config.password?.trim()
+  const timeoutMs = options?.quick ? REDIS_TIMEOUT_MS.quick : REDIS_TIMEOUT_MS.full
 
   return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
-      socket.destroy()
-      resolve({ ok: false, message: 'Redis 连接超时（10s）' })
-    }, 10_000)
+    let settled = false
+    let buffer = Buffer.alloc(0)
+    let stage: 'auth' | 'ping' | 'done' = username || password ? 'auth' : 'ping'
 
-    const onError = (err: Error) => {
-      clearTimeout(timeout)
-      resolve({ ok: false, message: `Redis 连接失败: ${err.message}` })
+    const finish = (result: ConnectionTestResult) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      socket.destroy()
+      resolve(result)
     }
 
-    const runPing = (socket: net.Socket | tls.TLSSocket) => {
-      let buffer = Buffer.alloc(0)
+    const timer = setTimeout(() => {
+      finish({ ok: false, message: `Redis 连接超时（${timeoutMs / 1000}s）` })
+    }, timeoutMs)
 
-      const sendNext = () => {
-        if (username && password) {
-          socket.write(respCommand('AUTH', username, password))
-          return
-        }
-        if (password) {
-          socket.write(respCommand('AUTH', password))
-          return
-        }
-        socket.write(respCommand('PING'))
+    const onError = (err: Error) => {
+      finish({ ok: false, message: `Redis 连接失败: ${err.message}` })
+    }
+
+    const sendPing = () => {
+      stage = 'ping'
+      socket.write(respCommand('PING'))
+    }
+
+    const handleLine = (line: string) => {
+      if (line.startsWith('-')) {
+        finish({ ok: false, message: `Redis 错误: ${line.slice(1)}` })
+        return
       }
 
-      socket.on('data', (chunk: Buffer) => {
-        buffer = Buffer.concat([buffer, chunk])
-        const text = buffer.toString('utf-8')
-        if (!text.includes('\r\n')) return
-
-        try {
-          const firstLine = text.split('\r\n')[0]
-          if (firstLine.startsWith('-')) {
-            clearTimeout(timeout)
-            socket.destroy()
-            resolve({ ok: false, message: `Redis 认证失败: ${firstLine.slice(1)}` })
-            return
-          }
-
-          if ((username || password) && !text.includes('PING')) {
-            buffer = Buffer.alloc(0)
-            socket.write(respCommand('PING'))
-            return
-          }
-
-          const response = readRedisResponse(buffer)
-          clearTimeout(timeout)
-          socket.end()
-          if (response.toUpperCase() === 'PONG') {
-            resolve({ ok: true, message: 'Redis PING 成功', detail: `${host}:${port}` })
-          } else {
-            resolve({ ok: false, message: `Redis 响应异常: ${response || text.trim()}` })
-          }
-        } catch (err) {
-          clearTimeout(timeout)
-          socket.destroy()
-          resolve({
-            ok: false,
-            message: err instanceof Error ? err.message : 'Redis 响应解析失败'
-          })
+      if (stage === 'auth') {
+        if (line.startsWith('+')) {
+          sendPing()
+        } else {
+          finish({ ok: false, message: `Redis 认证响应异常: ${line}` })
         }
-      })
+        return
+      }
 
-      socket.on('error', onError)
-      sendNext()
+      if (stage === 'ping') {
+        if (line === '+PONG') {
+          finish({ ok: true, message: 'Redis PING 成功', detail: `${host}:${port}` })
+        } else {
+          finish({ ok: false, message: `Redis 响应异常: ${line}` })
+        }
+      }
+    }
+
+    const onData = (chunk: Buffer) => {
+      buffer = Buffer.concat([buffer, chunk])
+      while (true) {
+        const parsed = readRedisSimpleLine(buffer)
+        if (!parsed) break
+        buffer = Buffer.from(parsed.rest)
+        handleLine(parsed.line)
+        if (settled) return
+      }
+    }
+
+    const onConnect = () => {
+      if (stage === 'auth') {
+        if (username && password) {
+          socket.write(respCommand('AUTH', username, password))
+        } else if (password) {
+          socket.write(respCommand('AUTH', password))
+        } else {
+          sendPing()
+        }
+        return
+      }
+      sendPing()
     }
 
     let socket: net.Socket | tls.TLSSocket
     if (useTls) {
-      socket = tls.connect({ host, port, rejectUnauthorized: false }, () => runPing(socket))
+      socket = tls.connect({ host, port, rejectUnauthorized: false }, onConnect)
     } else {
-      socket = net.createConnection({ host, port }, () => runPing(socket))
+      socket = net.createConnection({ host, port }, onConnect)
     }
+    socket.setTimeout(timeoutMs, () => finish({ ok: false, message: `Redis 连接超时（${timeoutMs / 1000}s）` }))
+    socket.on('data', onData)
     socket.on('error', onError)
   })
 }
 
-async function testMysql(config: Record<string, string>): Promise<ConnectionTestResult> {
+async function testMysql(
+  config: Record<string, string>,
+  options?: ConnectionTestOptions
+): Promise<ConnectionTestResult> {
   const host = config.host?.trim() || '127.0.0.1'
   const port = Number(config.port?.trim() || '3306')
   const user = config.user?.trim()
@@ -151,7 +213,7 @@ async function testMysql(config: Record<string, string>): Promise<ConnectionTest
     user,
     password: config.password ?? '',
     database: config.database?.trim() || undefined,
-    connectTimeout: 10_000,
+    connectTimeout: resolveTimeout(options),
     ssl: config.ssl === 'yes' ? { rejectUnauthorized: false } : undefined
   })
 
@@ -168,27 +230,39 @@ async function testMysql(config: Record<string, string>): Promise<ConnectionTest
   }
 }
 
-async function testLoki(config: Record<string, string>): Promise<ConnectionTestResult> {
+async function testLoki(
+  config: Record<string, string>,
+  options?: ConnectionTestOptions
+): Promise<ConnectionTestResult> {
   const base = config.url?.trim().replace(/\/$/, '')
   if (!base) return { ok: false, message: 'Loki URL 不能为空' }
 
   const headers = buildLokiHeaders(config)
-  const endpoints = [`${base}/ready`, `${base}/loki/api/v1/status/buildinfo`]
+  const timeoutMs = resolveTimeout(options)
+  const endpoints = options?.quick
+    ? [`${base}/ready`]
+    : [`${base}/ready`, `${base}/loki/api/v1/status/buildinfo`]
 
-  let lastError = '未知错误'
-  for (const url of endpoints) {
-    try {
-      const res = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) })
-      if (res.ok) {
-        return { ok: true, message: 'Loki 可达', detail: url }
-      }
-      lastError = `HTTP ${res.status}`
-    } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err)
-    }
+  const attempts = endpoints.map(async (url) => {
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return { ok: true as const, message: 'Loki 可达', detail: url }
+  })
+
+  try {
+    return await Promise.any(attempts)
+  } catch (err) {
+    const lastError =
+      err instanceof AggregateError
+        ? err.errors
+            .map((e) => (e instanceof Error ? e.message : String(e)))
+            .filter(Boolean)
+            .join(' · ') || '未知错误'
+        : err instanceof Error
+          ? err.message
+          : String(err)
+    return { ok: false, message: `Loki 连接失败: ${lastError}` }
   }
-
-  return { ok: false, message: `Loki 连接失败: ${lastError}` }
 }
 
 function buildElasticsearchHeaders(config: Record<string, string>): Record<string, string> {
@@ -207,47 +281,60 @@ function buildElasticsearchHeaders(config: Record<string, string>): Record<strin
   return headers
 }
 
-async function testElasticsearch(config: Record<string, string>): Promise<ConnectionTestResult> {
+async function testElasticsearch(
+  config: Record<string, string>,
+  options?: ConnectionTestOptions
+): Promise<ConnectionTestResult> {
   const base = config.url?.trim().replace(/\/$/, '')
   if (!base) return { ok: false, message: '集群 URL 不能为空' }
 
   const headers = buildElasticsearchHeaders(config)
   const verifyCerts = config.verifyCerts === 'yes'
-  const endpoints = [`${base}/_cluster/health`, `${base}/`]
+  const timeoutMs = resolveTimeout(options)
+  const endpoints = options?.quick ? [`${base}/`] : [`${base}/_cluster/health`, `${base}/`]
 
-  let lastError = '未知错误'
-  for (const url of endpoints) {
-    try {
-      const init: RequestInit & { agent?: https.Agent } = {
-        headers,
-        signal: AbortSignal.timeout(10_000)
-      }
-      if (url.startsWith('https://') && !verifyCerts) {
-        init.agent = new https.Agent({ rejectUnauthorized: false })
-      }
-
-      const res = await fetch(url, init)
-      if (res.ok) {
-        let detail = url
-        try {
-          const json = (await res.json()) as { cluster_name?: string; version?: { number?: string } }
-          if (json.cluster_name) {
-            detail = `${json.cluster_name}${json.version?.number ? ` · v${json.version.number}` : ''}`
-          } else if (json.version?.number) {
-            detail = `v${json.version.number}`
-          }
-        } catch {
-          // ignore parse errors
-        }
-        return { ok: true, message: 'Elasticsearch 可达', detail }
-      }
-      lastError = `HTTP ${res.status}`
-    } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err)
+  const attempts = endpoints.map(async (url) => {
+    const init: RequestInit & { agent?: https.Agent } = {
+      headers,
+      signal: AbortSignal.timeout(timeoutMs)
     }
-  }
+    if (url.startsWith('https://') && !verifyCerts) {
+      init.agent = getInsecureHttpsAgent()
+    }
 
-  return { ok: false, message: `Elasticsearch 连接失败: ${lastError}` }
+    const res = await fetch(url, init)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+    let detail = url
+    if (!options?.quick) {
+      try {
+        const json = (await res.json()) as { cluster_name?: string; version?: { number?: string } }
+        if (json.cluster_name) {
+          detail = `${json.cluster_name}${json.version?.number ? ` · v${json.version.number}` : ''}`
+        } else if (json.version?.number) {
+          detail = `v${json.version.number}`
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+    return { ok: true as const, message: 'Elasticsearch 可达', detail }
+  })
+
+  try {
+    return await Promise.any(attempts)
+  } catch (err) {
+    const lastError =
+      err instanceof AggregateError
+        ? err.errors
+            .map((e) => (e instanceof Error ? e.message : String(e)))
+            .filter(Boolean)
+            .join(' · ') || '未知错误'
+        : err instanceof Error
+          ? err.message
+          : String(err)
+    return { ok: false, message: `Elasticsearch 连接失败: ${lastError}` }
+  }
 }
 
 function buildMongodbUri(config: Record<string, string>): string {
@@ -277,16 +364,29 @@ function buildMongodbUri(config: Record<string, string>): string {
   return query ? `${base}?${query}` : base
 }
 
-async function testMongodb(config: Record<string, string>): Promise<ConnectionTestResult> {
+async function testMongodb(
+  config: Record<string, string>,
+  options?: ConnectionTestOptions
+): Promise<ConnectionTestResult> {
   const uri = buildMongodbUri(config)
+  const timeoutMs = resolveTimeout(options)
   const client = new MongoClient(uri, {
-    serverSelectionTimeoutMS: 10_000,
-    connectTimeoutMS: 10_000
+    serverSelectionTimeoutMS: timeoutMs,
+    connectTimeoutMS: timeoutMs
   })
 
   try {
     await client.connect()
     const ping = await client.db().admin().ping()
+    if (options?.quick) {
+      const host = config.host?.trim() || 'localhost'
+      return {
+        ok: ping.ok === 1,
+        message: 'MongoDB 连接成功',
+        detail: host
+      }
+    }
+
     const databases = await client.db().admin().listDatabases()
     return {
       ok: ping.ok === 1,
@@ -300,7 +400,8 @@ async function testMongodb(config: Record<string, string>): Promise<ConnectionTe
 
 async function testRocketmq(
   config: Record<string, string>,
-  ensureBridge: () => Promise<string>
+  ensureBridge: () => Promise<string>,
+  options?: ConnectionTestOptions
 ): Promise<ConnectionTestResult> {
   const namesrvAddr = config.namesrvAddr?.trim()
   if (!namesrvAddr) return { ok: false, message: 'NameServer 地址不能为空' }
@@ -324,46 +425,36 @@ async function testRocketmq(
   } catch (err) {
     return {
       ok: false,
-      message: err instanceof Error ? err.message : 'RocketMQ Admin 桥接未就绪'
+      message: err instanceof Error ? err.message : 'RocketMQ MCP 桥接未就绪'
     }
   }
 
-  const res = await fetch(`${baseUrl}/topic/topicList`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({
-      nameserverAddressList,
-      ak: accessKey,
-      sk: secretKey
-    }),
-    signal: AbortSignal.timeout(30_000)
-  })
+  const probeTimeout = options?.quick ? ROCKETMQ_TIMEOUT_MS.quick : ROCKETMQ_TIMEOUT_MS.full
 
-  const text = await res.text()
-  if (!res.ok) {
-    return { ok: false, message: `RocketMQ 请求失败 (${res.status})`, detail: text.slice(0, 200) }
+  if (!(await healthCheckAdmin(baseUrl, Math.min(probeTimeout, 5_000)))) {
+    return { ok: false, message: 'RocketMQ MCP 桥接未监听', detail: baseUrl }
   }
 
-  let topicCount: number | null = null
-  try {
-    const parsed = JSON.parse(text) as { data?: unknown[]; topicList?: unknown[] }
-    const list = parsed.data ?? parsed.topicList
-    if (Array.isArray(list)) topicCount = list.length
-  } catch {
-    // ignore parse errors, connection still ok
+  const firstNs = nameserverAddressList[0]
+  const nsHost = firstNs.includes(':') ? firstNs.split(':')[0].trim() : firstNs
+  const nsPort = firstNs.includes(':') ? Number(firstNs.split(':')[1]) || 9876 : 9876
+
+  if (!(await tcpPortOpen(nsHost, nsPort, probeTimeout))) {
+    return { ok: false, message: `NameServer 不可达: ${firstNs}` }
   }
 
   return {
     ok: true,
-    message: 'RocketMQ Topic 列表获取成功',
-    detail: topicCount != null ? `共 ${topicCount} 个 Topic` : namesrvAddr
+    message: 'RocketMQ MCP 桥接就绪',
+    detail: `${baseUrl} · NS ${firstNs}`
   }
 }
 
 export async function testConnection(
   type: string,
   config: Record<string, string>,
-  ensureRocketmqBridge: () => Promise<string>
+  ensureRocketmqBridge: () => Promise<string>,
+  options?: ConnectionTestOptions
 ): Promise<ConnectionTestResult> {
   const adapter = getAdapter(type)
   const validationError = adapter?.validateConnection?.(config)
@@ -374,17 +465,17 @@ export async function testConnection(
   try {
     switch (type) {
       case 'loki':
-        return await testLoki(config)
+        return await testLoki(config, options)
       case 'mysql':
-        return await testMysql(config)
+        return await testMysql(config, options)
       case 'redis':
-        return await redisPing(config)
+        return await redisPing(config, options)
       case 'rocketmq':
-        return await testRocketmq(config, ensureRocketmqBridge)
+        return await testRocketmq(config, ensureRocketmqBridge, options)
       case 'elasticsearch':
-        return await testElasticsearch(config)
+        return await testElasticsearch(config, options)
       case 'mongodb':
-        return await testMongodb(config)
+        return await testMongodb(config, options)
       default:
         if (adapter?.meta.status === 'planned') {
           return { ok: false, message: `${adapter.meta.name} 尚未开放，无法测试连接` }

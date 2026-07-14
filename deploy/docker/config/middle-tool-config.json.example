@@ -1,0 +1,32 @@
+{
+  "environments": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "name": "broker-dev",
+      "description": "经纪商开发环境",
+      "color": "#2563eb"
+    }
+  ],
+  "connections": [
+    {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "environmentId": "00000000-0000-4000-8000-000000000001",
+      "type": "redis",
+      "name": "broker-dev-redis",
+      "enabled": true,
+      "config": {
+        "host": "192.168.3.25",
+        "port": "6379",
+        "db": "1",
+        "password": "YOUR_REDIS_PASSWORD",
+        "ssl": "no",
+        "clusterMode": "no"
+      },
+      "createdAt": "2026-07-14T00:00:00.000Z",
+      "updatedAt": "2026-07-14T00:00:00.000Z"
+    }
+  ],
+  "settings": {
+    "mcpWriteEnabled": false
+  }
+}

@@ -1,4 +1,5 @@
 import type { AppData, Environment, MiddlewareConnection } from './types/app'
+import { DEFAULT_APP_SETTINGS, normalizeAppSettings, type AppSettings } from './types/settings'
 
 export const CONFIG_EXPORT_FORMAT = 'middle-tool-config' as const
 export const CONFIG_EXPORT_VERSION = 1
@@ -88,7 +89,8 @@ export function normalizeAppData(raw: unknown): AppData {
 
   return {
     environments: environmentsRaw.map(normalizeEnvironment),
-    connections: connectionsRaw.map(normalizeConnection)
+    connections: connectionsRaw.map(normalizeConnection),
+    settings: normalizeAppSettings(raw.settings)
   }
 }
 
@@ -127,7 +129,8 @@ export function buildConfigExportPayload(data: AppData): ConfigExportPayload {
     exportedAt: new Date().toISOString(),
     data: {
       environments: data.environments,
-      connections: data.connections
+      connections: data.connections,
+      settings: normalizeAppSettings(data.settings ?? DEFAULT_APP_SETTINGS)
     }
   }
 }

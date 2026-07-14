@@ -9,6 +9,7 @@ import {
   listAvailableMeta
 } from './adapters/registry'
 import { ConfigStore } from './services/config-store'
+import type { AppSettings } from '../../shared/types'
 import { testConnection } from './services/connection-test'
 import { McpManager } from './services/mcp-manager'
 import { RocketmqAdminBridge } from './services/rocketmq-admin-bridge'
@@ -101,13 +102,16 @@ function registerIpc(): void {
     }
   })
   ipcMain.handle('conn:delete', (_e, id) => configStore.deleteConnection(id))
-  ipcMain.handle('conn:test', async (_e, type: string, config: Record<string, string>) => {
-    try {
-      return await testConnection(type, config, () => rocketmqAdminBridge.ensureStarted())
-    } catch (err) {
-      throw err instanceof Error ? err : new Error(String(err))
+  ipcMain.handle(
+    'conn:test',
+    async (_e, type: string, config: Record<string, string>, options?: { quick?: boolean }) => {
+      try {
+        return await testConnection(type, config, () => rocketmqAdminBridge.ensureStarted(), options)
+      } catch (err) {
+        throw err instanceof Error ? err : new Error(String(err))
+      }
     }
-  })
+  )
 
   ipcMain.handle('adapter:list', () => listAdapterMeta())
   ipcMain.handle('adapter:list-available', () => listAvailableMeta())
@@ -124,9 +128,14 @@ function registerIpc(): void {
   ipcMain.handle('rocketmq:admin-status', () => rocketmqAdminBridge.getStatus())
   ipcMain.handle('system:status', () => getDashboardStatus(configStore, rocketmqAdminBridge))
 
+  ipcMain.handle('settings:get', () => configStore.getSettings())
+  ipcMain.handle('settings:update', (_e, input: Partial<AppSettings>) =>
+    configStore.updateSettings(input)
+  )
+
   ipcMain.handle('mcp:list-tools', async () => {
     try {
-      return await listMcpTools()
+      return await listMcpTools(configStore)
     } catch (err) {
       throw new Error(
         err instanceof Error ? err.message : '加载 MCP tools 失败，请先执行 npm run mcp:build'

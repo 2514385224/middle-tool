@@ -31,6 +31,14 @@ npm-debug.log*
 # User data (dev)
 data/
 
+# Local import configs (may contain secrets)
+config/import-from-mcp-secrets.json
+config/middle-tool-config-linux-deploy.json
+config/middle-tool-config-2026-07-14.json
+deploy/linux/config/middle-tool-config.json
+deploy/docker/config/middle-tool-config.json
+
 # RocketMQ MCP Java bridge (built locally)
 packages/rocketmq-mcp-server/vendor/
 packages/rocketmq-mcp-server/runtime/*.jar
+packages/mcp-server/runtime/*.jar

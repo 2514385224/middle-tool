@@ -6,6 +6,11 @@ export interface ConnectionTestResult {
   detail?: string
 }
 
+/** 目录页批量校验时使用 quick，缩短超时并跳过重型探测 */
+export interface ConnectionTestOptions {
+  quick?: boolean
+}
+
 export interface ConnectionTypeStats {
   total: number
   enabled: number

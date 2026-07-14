@@ -1,13 +1,17 @@
 import fs from 'node:fs'
-import path from 'path'
+import path from 'node:path'
 import { homedir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 
 import { app, dialog, type BrowserWindow } from 'electron'
 
 import { getMcpServerDefaultJarPath, isDefaultConfigPath } from '../../../shared/mcp-export'
+import { resolveBundledJar } from '../../../shared/rocketmq-bridge'
 import type { McpExportMeta, UvxDetectResult } from '../../../shared/types/mcp'
 import { ConfigStore } from './config-store'
 import { detectUvx } from './uvx-detector'
+
+const MAIN_DIRNAME = path.dirname(fileURLToPath(import.meta.url))
 
 export class McpManager {
   private configStore: ConfigStore
@@ -23,6 +27,15 @@ export class McpManager {
   }
 
   private resolveRocketmqJar(mcpServerRoot: string): string {
+    const fromBridge = resolveBundledJar({
+      isPackaged: app.isPackaged,
+      appPath: app.getAppPath(),
+      resourcesPath: process.resourcesPath,
+      packageRoot: mcpServerRoot,
+      mainDirname: MAIN_DIRNAME
+    })
+    if (fromBridge) return fromBridge
+
     const candidates = [
       getMcpServerDefaultJarPath(mcpServerRoot),
       path.join(this.resolvePackageRoot('rocketmq-mcp-server'), 'runtime', 'rocketmq-mcp.jar')
