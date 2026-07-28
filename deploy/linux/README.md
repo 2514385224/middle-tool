@@ -32,6 +32,7 @@ chmod +x bin/start.sh
 | Legacy SSE | `http://<IP>:8080/sse` | 兼容旧版 SSE 客户端 |
 | Legacy POST | `http://<IP>:8080/messages` | SSE 配套消息端点 |
 | Health | `http://<IP>:8080/health` | 健康检查 |
+| Config reload | `POST http://<IP>:8080/admin/reload` | 手动热重载配置 |
 
 ## 环境变量
 
@@ -42,8 +43,12 @@ chmod +x bin/start.sh
 | `MIDDLE_TOOL_MCP_TRANSPORT` | `http` | `http` 或 `stdio` |
 | `MIDDLE_TOOL_CONFIG_PATH` | `./config/middle-tool-config.json` | 连接配置文件 |
 | `MIDDLE_TOOL_MCP_ALLOWED_HOSTS` | - | 绑定 `0.0.0.0` 时建议设置 Host 白名单 |
+| `MIDDLE_TOOL_MCP_API_KEY` | - | 可选。设置后 HTTP/SSE/API 需鉴权；未设置则不校验 |
+| `MIDDLE_TOOL_CONFIG_WATCH` | 启用 | HTTP 模式下监听配置文件变更；设为 `0` 关闭 |
 | `ROCKETMQ_MCP_JAR_PATH` | `./runtime/rocketmq-mcp.jar` | RocketMQ 桥接 JAR |
 | `REDIS_MCP_COMMAND` | `uvx` | Redis 上游 MCP 启动命令 |
+| `REDIS_MCP_WARMUP` | 启用 | 启动时预拉 redis-mcp-server；设为 `0` 关闭 |
+| `REDIS_MCP_WARMUP_TIMEOUT_MS` | `20000` | uvx 预热超时（毫秒） |
 
 ## 自定义端口示例
 
@@ -60,6 +65,21 @@ Streamable HTTP（按实际 IP/端口修改）：
   "mcpServers": {
     "middle-tool": {
       "url": "http://192.168.1.100:8080/mcp"
+    }
+  }
+}
+```
+
+启用 API Key 时（`MIDDLE_TOOL_MCP_API_KEY`）：
+
+```json
+{
+  "mcpServers": {
+    "middle-tool": {
+      "url": "http://192.168.1.100:8080/mcp",
+      "headers": {
+        "Authorization": "Bearer your-secret-key"
+      }
     }
   }
 }

@@ -26,6 +26,36 @@ export interface AppData {
 
 const APP_DIR_NAME = 'middle-tool'
 const STORE_FILE_NAME = 'middle-tool-config.json'
+const CONFIG_EXPORT_FORMAT = 'middle-tool-config'
+const CONFIG_EXPORT_VERSION = 1
+
+function unwrapConfigRoot(parsed: unknown): AppData {
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('配置文件根节点必须是对象')
+  }
+
+  const root = parsed as Record<string, unknown>
+  let data: unknown = root
+
+  if (root.format === CONFIG_EXPORT_FORMAT) {
+    const version = root.version
+    if (typeof version === 'number' && version > CONFIG_EXPORT_VERSION) {
+      throw new Error(`不支持的配置版本: ${String(version)}`)
+    }
+    data = root.data
+  }
+
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    throw new Error('无法识别的配置文件格式（需 middle-tool-config 导出或 environments/connections 结构）')
+  }
+
+  const app = data as AppData
+  if (!Array.isArray(app.environments) || !Array.isArray(app.connections)) {
+    throw new Error('配置需包含 environments 与 connections 数组')
+  }
+
+  return app
+}
 
 export function getDefaultConfigPath(): string {
   const envOverride = process.env.MIDDLE_TOOL_CONFIG_PATH
@@ -53,7 +83,7 @@ export function readAppData(configPath?: string): AppData {
       `MiddleTool 配置文件不存在: ${filePath}\n请先在 MiddleTool 桌面端添加 RocketMQ 连接，或设置 MIDDLE_TOOL_CONFIG_PATH。`
     )
   }
-  const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as AppData
+  const raw = unwrapConfigRoot(JSON.parse(fs.readFileSync(filePath, 'utf-8')))
   return {
     environments: raw.environments ?? [],
     connections: raw.connections ?? [],

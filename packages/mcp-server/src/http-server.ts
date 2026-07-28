@@ -7,8 +7,10 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'
 
 import { getDefaultConfigPath, readAppData } from './config-reader.js'
+import { reloadAppDataWithMeta, startConfigFileWatcher } from './config-reload.js'
 import { summarizeConnections } from './connection-summary.js'
 import { probeConnectionStatuses } from './connection-status.js'
+import { createOptionalApiKeyMiddleware, resolveHttpApiKey } from './http-auth.js'
 import { createMiddleToolServer, SERVER_VERSION } from './server-core.js'
 import { preloadRedisTools } from './redis-proxy.js'
 
@@ -86,14 +88,25 @@ export async function startHttpServer(options: HttpServerOptions): Promise<void>
 
   const streamableTransports = new Map<string, StreamableHTTPServerTransport>()
   const sseTransports = new Map<string, SSEServerTransport>()
+  const apiKey = resolveHttpApiKey()
+  const requireApiKey = createOptionalApiKeyMiddleware(apiKey)
 
   app.get('/health', (_req, res) => {
     res.json({
       ok: true,
       service: 'middle-tool-mcp-server',
       version: SERVER_VERSION,
-      config: getDefaultConfigPath()
+      config: getDefaultConfigPath(),
+      authRequired: Boolean(apiKey)
     })
+  })
+
+  app.use((req, res, next) => {
+    if (req.path === '/health') {
+      next()
+      return
+    }
+    requireApiKey(req, res, next)
   })
 
   app.get('/api/connections', (req, res) => {
@@ -125,6 +138,22 @@ export async function startHttpServer(options: HttpServerOptions): Promise<void>
         quick
       })
       res.json(report)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      res.status(500).json({ ok: false, error: message })
+    }
+  })
+
+  app.post('/admin/reload', (_req, res) => {
+    try {
+      const result = reloadAppDataWithMeta()
+      res.json({
+        ok: true,
+        reloadedAt: result.reloadedAt,
+        config: result.configPath,
+        environments: result.data.environments.length,
+        connections: result.data.connections.length
+      })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       res.status(500).json({ ok: false, error: message })
@@ -224,6 +253,8 @@ export async function startHttpServer(options: HttpServerOptions): Promise<void>
 
   await preloadRedisTools()
 
+  startConfigFileWatcher()
+
   await new Promise<void>((resolve, reject) => {
     const httpServer = app.listen(options.port, options.host, () => resolve())
     httpServer.on('error', reject)
@@ -240,4 +271,8 @@ export async function startHttpServer(options: HttpServerOptions): Promise<void>
   console.error(`Health: ${baseUrl}/health`)
   console.error(`Connections API: ${baseUrl}/api/connections`)
   console.error(`Connection status API: ${baseUrl}/api/connections/status`)
+  console.error(`Config reload API: POST ${baseUrl}/admin/reload`)
+  if (apiKey) {
+    console.error('HTTP API Key: enabled (Authorization: Bearer or X-API-Key)')
+  }
 }

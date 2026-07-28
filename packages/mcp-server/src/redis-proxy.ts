@@ -1,3 +1,5 @@
+import { spawn } from 'node:child_process'
+
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
@@ -9,6 +11,15 @@ export const REDIS_TOOL_PREFIX = 'redis_'
 export const CONNECTION_ARG_KEYS = ['connection_id', 'connection_name', 'environment'] as const
 
 const DEFAULT_PROBE_TIMEOUT_MS = 8000
+const DEFAULT_WARMUP_TIMEOUT_MS = 20_000
+
+interface PooledClientEntry {
+  client: Client
+  lastUsed: number
+}
+
+const pooledClients = new Map<string, PooledClientEntry>()
+const connectingClients = new Map<string, Promise<Client>>()
 
 function getProbeTimeoutMs(): number {
   const raw = process.env.REDIS_MCP_PROBE_TIMEOUT_MS?.trim()
@@ -51,6 +62,86 @@ function resolveSpawnArgs(creds: RedisCredentials): { command: string; args: str
   }
 }
 
+function resolveWarmupSpawnArgs(): { command: string; args: string[] } {
+  const customCommand = process.env.REDIS_MCP_COMMAND?.trim()
+  const customWarmupArgs = process.env.REDIS_MCP_WARMUP_ARGS?.trim()
+  if (customCommand && customWarmupArgs) {
+    return { command: customCommand, args: customWarmupArgs.split(/\s+/).filter(Boolean) }
+  }
+
+  const command = customCommand || 'uvx'
+  return {
+    command,
+    args: ['--from', 'redis-mcp-server@latest', 'redis-mcp-server', '--help']
+  }
+}
+
+function credsCacheKey(creds: RedisCredentials): string {
+  return [
+    creds.host,
+    creds.port,
+    creds.db,
+    creds.password ?? '',
+    creds.username ?? '',
+    creds.ssl ? '1' : '0',
+    creds.clusterMode ? '1' : '0'
+  ].join('\0')
+}
+
+async function connectUpstreamClient(creds: RedisCredentials): Promise<Client> {
+  const { command, args } = resolveSpawnArgs(creds)
+  const transport = new StdioClientTransport({ command, args })
+  const client = new Client({ name: 'middle-tool-redis-proxy', version: '0.1.0' }, { capabilities: {} })
+  await client.connect(transport)
+  return client
+}
+
+export function invalidatePooledClient(creds: RedisCredentials): void {
+  const key = credsCacheKey(creds)
+  const entry = pooledClients.get(key)
+  if (!entry) return
+  pooledClients.delete(key)
+  void entry.client.close().catch(() => {})
+}
+
+async function getPooledClient(creds: RedisCredentials): Promise<Client> {
+  const key = credsCacheKey(creds)
+  const existing = pooledClients.get(key)
+  if (existing) {
+    existing.lastUsed = Date.now()
+    return existing.client
+  }
+
+  let pending = connectingClients.get(key)
+  if (!pending) {
+    pending = connectUpstreamClient(creds)
+      .then((client) => {
+        pooledClients.set(key, { client, lastUsed: Date.now() })
+        return client
+      })
+      .finally(() => {
+        connectingClients.delete(key)
+      })
+    connectingClients.set(key, pending)
+  }
+
+  return pending
+}
+
+async function withPooledClient<T>(creds: RedisCredentials, fn: (client: Client) => Promise<T>): Promise<T> {
+  const client = await getPooledClient(creds)
+  return fn(client)
+}
+
+async function withOneShotClient<T>(creds: RedisCredentials, fn: (client: Client) => Promise<T>): Promise<T> {
+  const client = await connectUpstreamClient(creds)
+  try {
+    return await fn(client)
+  } finally {
+    await client.close().catch(() => {})
+  }
+}
+
 function prefixToolName(name: string): string {
   return name.startsWith(REDIS_TOOL_PREFIX) ? name : `${REDIS_TOOL_PREFIX}${name}`
 }
@@ -88,19 +179,6 @@ function withConnectionParams(tool: Tool): Tool {
   }
 }
 
-async function withUpstreamClient<T>(creds: RedisCredentials, fn: (client: Client) => Promise<T>): Promise<T> {
-  const { command, args } = resolveSpawnArgs(creds)
-  const transport = new StdioClientTransport({ command, args })
-  const client = new Client({ name: 'middle-tool-redis-proxy', version: '0.1.0' }, { capabilities: {} })
-
-  await client.connect(transport)
-  try {
-    return await fn(client)
-  } finally {
-    await client.close()
-  }
-}
-
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined
   try {
@@ -125,7 +203,7 @@ async function probeUpstreamToolsLive(): Promise<Tool[]> {
   }
 
   return withTimeout(
-    withUpstreamClient(probeCreds, async (client) => {
+    withOneShotClient(probeCreds, async (client) => {
       const result = await client.listTools()
       return result.tools
     }),
@@ -197,6 +275,51 @@ export async function preloadRedisTools(): Promise<void> {
     )
     console.error(`[middle-tool] ${getUpstreamRequirementHint()}`)
   }
+
+  await warmupRedisUpstream()
+}
+
+function runWarmupCommand(command: string, args: string[], timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: 'ignore', windowsHide: true })
+    const timer = setTimeout(() => {
+      child.kill()
+      reject(new Error(`Redis uvx 预热超时（${timeoutMs}ms）`))
+    }, timeoutMs)
+
+    child.once('error', (err) => {
+      clearTimeout(timer)
+      reject(err)
+    })
+
+    child.once('close', (code) => {
+      clearTimeout(timer)
+      if (code === 0 || code === null) {
+        resolve()
+        return
+      }
+      reject(new Error(`Redis uvx 预热退出码 ${code}`))
+    })
+  })
+}
+
+/** 启动时预拉 redis-mcp-server 包，避免首次 tools/call 冷启动过慢 */
+export async function warmupRedisUpstream(): Promise<void> {
+  if (process.env.REDIS_MCP_WARMUP === '0') return
+
+  const timeoutRaw = process.env.REDIS_MCP_WARMUP_TIMEOUT_MS?.trim()
+  const timeoutMs = timeoutRaw && Number.isFinite(Number(timeoutRaw)) ? Number(timeoutRaw) : DEFAULT_WARMUP_TIMEOUT_MS
+  const { command, args } = resolveWarmupSpawnArgs()
+
+  try {
+    await runWarmupCommand(command, args, timeoutMs)
+    console.error('[middle-tool] Redis uvx 预热完成')
+  } catch (err) {
+    console.error(
+      `[middle-tool] Redis uvx 预热失败（不影响启动）: ${err instanceof Error ? err.message : String(err)}`
+    )
+    console.error(`[middle-tool] ${getUpstreamRequirementHint()}`)
+  }
 }
 
 export async function listProxiedTools(): Promise<Tool[]> {
@@ -228,10 +351,23 @@ export async function callUpstreamTool(
   args: Record<string, unknown>
 ): Promise<RedisToolResult> {
   const upstreamName = stripToolPrefix(toolName)
-  return withUpstreamClient(creds, async (client) => {
-    const result = await client.callTool({ name: upstreamName, arguments: args })
-    return normalizeUpstreamToolResult(result)
-  })
+
+  const invoke = async () =>
+    withPooledClient(creds, async (client) => {
+      const result = await client.callTool({ name: upstreamName, arguments: args })
+      return normalizeUpstreamToolResult(result)
+    })
+
+  try {
+    return await invoke()
+  } catch (firstErr) {
+    invalidatePooledClient(creds)
+    try {
+      return await invoke()
+    } catch {
+      throw firstErr
+    }
+  }
 }
 
 export function getUpstreamRequirementHint(): string {

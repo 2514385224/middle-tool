@@ -10,7 +10,7 @@ RUN apt-get update \
 
 COPY --from=ghcr.io/astral-sh/uv:0.6.14 /uv /uvx /bin/
 
-# 预拉取 redis-mcp-server，避免首次 tools/list 下载阻塞
+# 预拉取 redis-mcp-server，避免首次 Redis 工具调用冷启动过慢（与 REDIS_MCP_WARMUP 互补）
 RUN uvx --from redis-mcp-server@latest redis-mcp-server --help >/dev/null 2>&1 || true
 
 COPY release/middle-tool-mcp-linux-x64-${APP_VERSION}.tar.gz /tmp/bundle.tar.gz

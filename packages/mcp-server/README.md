@@ -54,6 +54,58 @@ npm run build -w @middle-tool/mcp-server
 
 连接配置自动从默认路径读取。桌面端「MCP 配置」会根据已启用的 RocketMQ / Redis 连接自动补充 env。
 
+### 远程 HTTP MCP（Cursor）
+
+```json
+{
+  "mcpServers": {
+    "middle-tool": {
+      "url": "http://192.168.1.100:8080/mcp"
+    }
+  }
+}
+```
+
+### HTTP API Key（可选）
+
+服务端设置 `MIDDLE_TOOL_MCP_API_KEY` 后，除 `/health` 外的 HTTP 请求需携带 Key；未设置则与原来一样不校验。
+
+```bash
+export MIDDLE_TOOL_MCP_API_KEY=your-secret-key
+```
+
+Cursor `mcp.json`：
+
+```json
+{
+  "mcpServers": {
+    "middle-tool": {
+      "url": "http://192.168.1.100:8080/mcp",
+      "headers": {
+        "Authorization": "Bearer your-secret-key"
+      }
+    }
+  }
+}
+```
+
+也支持请求头 `X-API-Key: your-secret-key`。curl 示例：
+
+```bash
+curl -H "Authorization: Bearer your-secret-key" http://127.0.0.1:8080/api/connections
+```
+
+### 配置热 reload
+
+HTTP 模式下默认监听配置文件变更（`MIDDLE_TOOL_CONFIG_WATCH=0` 可关闭），也可手动触发：
+
+```bash
+curl -X POST http://127.0.0.1:8080/admin/reload
+# 启用 API Key 时需带 Authorization 头
+```
+
+修改挂载的 `middle-tool-config.json` 后无需重启容器；下一次 MCP 工具调用会读取新配置。
+
 ## Tools
 
 | 分类 | 工具 |
@@ -76,9 +128,15 @@ npm run build -w @middle-tool/mcp-server
 | `MIDDLE_TOOL_MCP_PORT` | HTTP 端口，默认 `8080` |
 | `MIDDLE_TOOL_MCP_PATH` | Streamable HTTP 路径，默认 `/mcp` |
 | `MIDDLE_TOOL_MCP_ALLOWED_HOSTS` | 绑定 `0.0.0.0` 时的 Host 白名单 |
+| `MIDDLE_TOOL_MCP_API_KEY` | 可选。设置后 HTTP/SSE/API 需鉴权；未设置则不校验 |
+| `MIDDLE_TOOL_CONFIG_WATCH` | `1`（默认）HTTP 模式下监听配置文件变更并热 reload |
 | `ROCKETMQ_MCP_JAR_PATH` | RocketMQ Admin 桥接 JAR 路径 |
 | `ROCKETMQ_MCP_PORT` | RocketMQ Admin 桥接端口，默认 6868 |
 | `REDIS_MCP_COMMAND` | uvx 可执行文件路径（Redis 代理用） |
+| `REDIS_MCP_WARMUP` | 设为 `0` 关闭启动时 uvx 预热；默认开启 |
+| `REDIS_MCP_WARMUP_TIMEOUT_MS` | uvx 预热超时，默认 `20000` |
+| `REDIS_MCP_WARMUP_ARGS` | 自定义预热命令参数（配合 `REDIS_MCP_COMMAND`） |
+| `REDIS_MCP_PROBE_LIVE` | 设为 `1` 时启动时 live 探测上游 tools/list（默认用内置 manifest） |
 
 ## License
 
