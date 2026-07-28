@@ -34,3 +34,13 @@ export const DEFAULT_MCP_SERVER_RUNTIME_JAR = 'rocketmq-mcp.jar'
 export function getMcpServerDefaultJarPath(mcpServerRoot: string): string {
   return path.join(mcpServerRoot, 'runtime', DEFAULT_MCP_SERVER_RUNTIME_JAR)
 }
+
+export function buildMcpHttpUrl(host: string, port: number, mcpPath = '/mcp'): string {
+  const normalizedHost = host.trim() || '127.0.0.1'
+  const normalizedPath = mcpPath.trim().startsWith('/') ? mcpPath.trim() : `/${mcpPath.trim() || 'mcp'}`
+  const displayHost =
+    normalizedHost === '0.0.0.0' ? '127.0.0.1' : normalizedHost === '::' ? '[::1]' : normalizedHost
+  const needsBracket = displayHost.includes(':') && !displayHost.startsWith('[')
+  const hostPart = needsBracket ? `[${displayHost}]` : displayHost
+  return `http://${hostPart}:${port}${normalizedPath}`
+}

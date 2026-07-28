@@ -92,8 +92,50 @@ export default function McpExport() {
         mcpWriteEnabled: !settings.mcpWriteEnabled
       })
       setSettings(next)
+      await loadConfig()
     } catch (err) {
       console.error('更新 MCP 写权限失败', err)
+    } finally {
+      setSettingsSaving(false)
+    }
+  }
+
+  const handleHttpSettingBlur = async (
+    field: 'mcpHttpHost' | 'mcpHttpPort' | 'mcpHttpPath' | 'mcpHttpApiKey',
+    value: string
+  ) => {
+    if (!settings || settingsSaving) return
+
+    let patch: Partial<AppSettings> | null = null
+
+    if (field === 'mcpHttpPort') {
+      const port = Number(value.trim())
+      if (!Number.isInteger(port) || port < 1 || port > 65535) return
+      if (port === settings.mcpHttpPort) return
+      patch = { mcpHttpPort: port }
+    } else if (field === 'mcpHttpHost') {
+      const host = value.trim() || '127.0.0.1'
+      if (host === settings.mcpHttpHost) return
+      patch = { mcpHttpHost: host }
+    } else if (field === 'mcpHttpPath') {
+      const mcpPath = value.trim() ? (value.trim().startsWith('/') ? value.trim() : `/${value.trim()}`) : '/mcp'
+      if (mcpPath === settings.mcpHttpPath) return
+      patch = { mcpHttpPath: mcpPath }
+    } else if (field === 'mcpHttpApiKey') {
+      const apiKey = value.trim()
+      if (apiKey === (settings.mcpHttpApiKey ?? '')) return
+      patch = { mcpHttpApiKey: apiKey }
+    }
+
+    if (!patch) return
+
+    setSettingsSaving(true)
+    try {
+      const next = await window.middleTool.settings.update(patch)
+      setSettings(next)
+      await loadConfig()
+    } catch (err) {
+      console.error('更新 HTTP MCP 设置失败', err)
     } finally {
       setSettingsSaving(false)
     }
@@ -123,8 +165,8 @@ export default function McpExport() {
         <div>
           <h2>MCP 配置</h2>
           <p>
-            根据已启用的中间件连接自动生成 JSON；启用 Redis 时会写入检测到的 uvx 路径到{' '}
-            <code>REDIS_MCP_COMMAND</code>。
+            导出 Streamable HTTP 配置（<code>url</code>），供 Cursor / Claude 连接已启动的 MCP 服务。
+            连接信息由服务端读取，无需写入 JSON。
           </p>
         </div>
 
@@ -168,14 +210,81 @@ export default function McpExport() {
         </p>
       </section>
 
+      <section className="mcp-transport-panel" aria-label="HTTP 服务地址">
+        <div className="mcp-transport-head">
+          <div>
+            <h3>HTTP 服务地址</h3>
+            <p className="mcp-transport-desc">
+              Cursor 只需 <code>url</code> 指向 MiddleTool MCP HTTP 服务；改连接后由服务端 reload 生效。
+            </p>
+          </div>
+        </div>
+
+        <div className="mcp-http-grid">
+          <label className="mcp-http-field">
+            <span className="mcp-http-label">主机</span>
+            <input
+              type="text"
+              className="mcp-http-input"
+              defaultValue={settings?.mcpHttpHost ?? '127.0.0.1'}
+              key={`host-${settings?.mcpHttpHost ?? '127.0.0.1'}`}
+              disabled={loading || settingsSaving}
+              placeholder="127.0.0.1 或 192.168.x.x"
+              onBlur={(e) => handleHttpSettingBlur('mcpHttpHost', e.target.value)}
+            />
+          </label>
+          <label className="mcp-http-field">
+            <span className="mcp-http-label">端口</span>
+            <input
+              type="number"
+              className="mcp-http-input"
+              min={1}
+              max={65535}
+              defaultValue={settings?.mcpHttpPort ?? 8080}
+              key={`port-${settings?.mcpHttpPort ?? 8080}`}
+              disabled={loading || settingsSaving}
+              onBlur={(e) => handleHttpSettingBlur('mcpHttpPort', e.target.value)}
+            />
+          </label>
+          <label className="mcp-http-field">
+            <span className="mcp-http-label">路径</span>
+            <input
+              type="text"
+              className="mcp-http-input"
+              defaultValue={settings?.mcpHttpPath ?? '/mcp'}
+              key={`path-${settings?.mcpHttpPath ?? '/mcp'}`}
+              disabled={loading || settingsSaving}
+              onBlur={(e) => handleHttpSettingBlur('mcpHttpPath', e.target.value)}
+            />
+          </label>
+          <label className="mcp-http-field mcp-http-field-wide">
+            <span className="mcp-http-label">API Key（可选）</span>
+            <input
+              type="password"
+              className="mcp-http-input"
+              defaultValue={settings?.mcpHttpApiKey ?? ''}
+              key={`api-${settings?.mcpHttpApiKey ?? ''}`}
+              disabled={loading || settingsSaving}
+              placeholder="与服务端 MIDDLE_TOOL_MCP_API_KEY 一致时填写"
+              autoComplete="off"
+              onBlur={(e) => handleHttpSettingBlur('mcpHttpApiKey', e.target.value)}
+            />
+          </label>
+        </div>
+
+        {exportMeta?.httpUrl && (
+          <p className="mcp-http-preview">
+            当前 URL：<code>{exportMeta.httpUrl}</code>
+            <span className="mcp-http-preview-hint">
+              请先启动 HTTP 服务（如 <code>npm run mcp-server:start:http</code> 或 Linux/Docker 部署）
+            </span>
+          </p>
+        )}
+      </section>
+
       {exportMeta && exportMeta.notes.length > 0 && (
         <section className="mcp-export-notes" aria-label="导出说明">
-          <h3 className="mcp-export-notes-title">
-            生成说明
-            {exportMeta.envKeys.length > 0 && (
-              <span className="mcp-export-env-keys">env: {exportMeta.envKeys.join(', ')}</span>
-            )}
-          </h3>
+          <h3 className="mcp-export-notes-title">生成说明</h3>
           <ul className="mcp-export-notes-list">
             {exportMeta.notes.map((note) => (
               <li key={note}>{note}</li>
@@ -184,7 +293,7 @@ export default function McpExport() {
         </section>
       )}
 
-      {uvx && (
+      {uvx && exportMeta?.usesRedis && (
         <section
           className={`mcp-deps-panel ${uvx.installed ? 'is-ready' : 'is-missing'}`}
           aria-label="uvx 检测与安装"
@@ -193,8 +302,7 @@ export default function McpExport() {
             <div>
               <h3>Redis 依赖 · uvx</h3>
               <p className="mcp-deps-desc">
-                使用 Redis 需本机安装 uv/uvx。检测到的路径会写入导出 JSON 的{' '}
-                <code>REDIS_MCP_COMMAND</code>（仅当已启用 Redis 连接时）。
+                uvx 需安装在运行 MCP HTTP 服务的环境（本机或远程 Linux/Docker），不会写入 Cursor JSON。
               </p>
             </div>
             <button type="button" className="btn-ghost btn-sm" onClick={loadConfig}>
@@ -211,7 +319,7 @@ export default function McpExport() {
             </div>
 
             <div className="mcp-uvx-field">
-              <span className="mcp-uvx-label">检测地址（REDIS_MCP_COMMAND）</span>
+              <span className="mcp-uvx-label">本机 uvx（供本地 HTTP 服务参考）</span>
               {uvx.path ? (
                 <div className="mcp-uvx-path-row">
                   <code className="mcp-deps-path">{uvx.path}</code>
@@ -243,9 +351,9 @@ export default function McpExport() {
             </div>
           </div>
 
-          {exportMeta?.usesRedis && !uvx.installed && (
+          {!uvx.installed && (
             <p className="mcp-deps-note mcp-deps-note-warn">
-              已启用 Redis 连接，但 uvx 未就绪。安装后点击「重新检测」，再复制下方 JSON。
+              已启用 Redis 连接。若在本机运行 HTTP MCP，请先安装 uvx；远程部署请在服务器侧安装。
             </p>
           )}
         </section>

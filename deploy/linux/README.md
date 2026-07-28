@@ -45,6 +45,7 @@ chmod +x bin/start.sh
 | `MIDDLE_TOOL_MCP_ALLOWED_HOSTS` | - | 绑定 `0.0.0.0` 时建议设置 Host 白名单 |
 | `MIDDLE_TOOL_MCP_API_KEY` | - | 可选。设置后 HTTP/SSE/API 需鉴权；未设置则不校验 |
 | `MIDDLE_TOOL_CONFIG_WATCH` | 启用 | HTTP 模式下监听配置文件变更；设为 `0` 关闭 |
+| `MIDDLE_TOOL_CONFIG_WRITE` | 启用 | 允许 `PUT /admin/config`；设为 `0` 禁止 API 写配置 |
 | `ROCKETMQ_MCP_JAR_PATH` | `./runtime/rocketmq-mcp.jar` | RocketMQ 桥接 JAR |
 | `REDIS_MCP_COMMAND` | `uvx` | Redis 上游 MCP 启动命令 |
 | `REDIS_MCP_WARMUP` | 启用 | 启动时预拉 redis-mcp-server；设为 `0` 关闭 |
@@ -96,6 +97,23 @@ Legacy SSE：
   }
 }
 ```
+
+## 配置动态更新（无需重启）
+
+| 方式 | 说明 |
+|------|------|
+| `GET /admin/config` | 读取当前生效的配置 JSON |
+| `PUT /admin/config` | 整文件替换并立即生效（支持扁平 JSON 或桌面 export 包装） |
+| `POST /admin/reload` | 从磁盘重新加载（适合宿主机已改挂载文件） |
+| 文件监听 | 默认开启；Docker 卷变更可能不触发，建议用 reload API |
+
+```bash
+# 更新配置后验证
+curl -s http://127.0.0.1:8080/admin/reload
+curl -s http://127.0.0.1:8080/api/connections | head
+```
+
+禁用 API 写入：`MIDDLE_TOOL_CONFIG_WRITE=0`。
 
 ## systemd 示例
 

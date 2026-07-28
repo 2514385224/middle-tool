@@ -8,7 +8,7 @@ export interface UvxDetectResult {
 }
 
 export interface McpExportMeta {
-  envKeys: string[]
+  httpUrl: string
   notes: string[]
   usesRedis: boolean
   uvx: UvxDetectResult

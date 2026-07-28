@@ -50,6 +50,12 @@ function getPool(creds: MysqlCredentials): Pool {
   return pool
 }
 
+export async function clearMysqlPoolCache(): Promise<void> {
+  const pools = [...poolCache.values()]
+  poolCache.clear()
+  await Promise.all(pools.map((pool) => pool.end().catch(() => {})))
+}
+
 function assertWriteAllowed(sql: string, creds: MysqlCredentials): void {
   if (WRITE_PATTERNS.insert.test(sql) && !creds.allowInsert) {
     throw new Error('此连接禁止 INSERT，请在 MiddleTool 中启用 allowInsert')

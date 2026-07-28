@@ -104,6 +104,13 @@ export function invalidatePooledClient(creds: RedisCredentials): void {
   void entry.client.close().catch(() => {})
 }
 
+export async function clearAllPooledClients(): Promise<void> {
+  const entries = [...pooledClients.values()]
+  pooledClients.clear()
+  connectingClients.clear()
+  await Promise.all(entries.map((entry) => entry.client.close().catch(() => {})))
+}
+
 async function getPooledClient(creds: RedisCredentials): Promise<Client> {
   const key = credsCacheKey(creds)
   const existing = pooledClients.get(key)

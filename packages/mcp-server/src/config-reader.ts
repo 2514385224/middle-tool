@@ -127,6 +127,33 @@ export function readAppData(configPath?: string): AppData {
   return data
 }
 
+export function parseAppDataInput(input: unknown): AppData {
+  const raw = unwrapConfigRoot(input)
+  return {
+    environments: raw.environments ?? [],
+    connections: raw.connections ?? [],
+    settings: raw.settings
+  }
+}
+
+/** 原子写入配置文件（扁平 JSON，不含 export 包装） */
+export function writeAppData(data: AppData, configPath?: string): string {
+  const filePath = path.resolve(configPath ?? getDefaultConfigPath())
+  fs.mkdirSync(path.dirname(filePath), { recursive: true })
+
+  const payload = {
+    environments: data.environments,
+    connections: data.connections,
+    ...(data.settings !== undefined ? { settings: data.settings } : {})
+  }
+
+  const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`
+  fs.writeFileSync(tmpPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf-8')
+  fs.renameSync(tmpPath, filePath)
+  invalidateAppDataCache(filePath)
+  return filePath
+}
+
 export interface ResolvedConnection {
   connection: MiddlewareConnection
   environment: Environment

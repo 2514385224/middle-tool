@@ -95,16 +95,33 @@ Cursor `mcp.json`：
 curl -H "Authorization: Bearer your-secret-key" http://127.0.0.1:8080/api/connections
 ```
 
-### 配置热 reload
+### 配置热 reload 与 API 更新
 
-HTTP 模式下默认监听配置文件变更（`MIDDLE_TOOL_CONFIG_WATCH=0` 可关闭），也可手动触发：
+HTTP 模式下默认监听配置文件变更（`MIDDLE_TOOL_CONFIG_WATCH=0` 可关闭）。Docker 挂载卷时 `fs.watch` 可能不稳定，**推荐用 API 或手动 reload**。
+
+**读取当前配置：**
+
+```bash
+curl http://127.0.0.1:8080/admin/config
+```
+
+**整文件替换（扁平 JSON 或桌面 export 包装均可）：**
+
+```bash
+curl -X PUT http://127.0.0.1:8080/admin/config \
+  -H "Content-Type: application/json" \
+  -d @middle-tool-config.json
+```
+
+**仅重新从磁盘加载（例如已在宿主机改好挂载文件）：**
 
 ```bash
 curl -X POST http://127.0.0.1:8080/admin/reload
-# 启用 API Key 时需带 Authorization 头
 ```
 
-修改挂载的 `middle-tool-config.json` 后无需重启容器；下一次 MCP 工具调用会读取新配置。
+启用 API Key 时以上请求需带 `Authorization: Bearer ...`。写入完成后**无需重启容器**；下一次 MCP 工具调用会使用新连接信息（并自动清空 MySQL/Redis 连接池）。
+
+禁用 API 写入：`MIDDLE_TOOL_CONFIG_WRITE=0`（仍可读、可 reload）。
 
 ## Tools
 
@@ -130,6 +147,7 @@ curl -X POST http://127.0.0.1:8080/admin/reload
 | `MIDDLE_TOOL_MCP_ALLOWED_HOSTS` | 绑定 `0.0.0.0` 时的 Host 白名单 |
 | `MIDDLE_TOOL_MCP_API_KEY` | 可选。设置后 HTTP/SSE/API 需鉴权；未设置则不校验 |
 | `MIDDLE_TOOL_CONFIG_WATCH` | `1`（默认）HTTP 模式下监听配置文件变更并热 reload |
+| `MIDDLE_TOOL_CONFIG_WRITE` | `1`（默认）允许 `PUT /admin/config`；设为 `0` 只读 |
 | `ROCKETMQ_MCP_JAR_PATH` | RocketMQ Admin 桥接 JAR 路径 |
 | `ROCKETMQ_MCP_PORT` | RocketMQ Admin 桥接端口，默认 6868 |
 | `REDIS_MCP_COMMAND` | uvx 可执行文件路径（Redis 代理用） |

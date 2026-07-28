@@ -7,7 +7,8 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'
 
 import { getDefaultConfigPath, readAppData } from './config-reader.js'
-import { reloadAppDataWithMeta, startConfigFileWatcher } from './config-reload.js'
+import { reloadAppDataWithMeta, startConfigFileWatcher, updateAppDataFromInput } from './config-reload.js'
+import { isConfigWriteEnabled } from './config-side-effects.js'
 import { summarizeConnections } from './connection-summary.js'
 import { probeConnectionStatuses } from './connection-status.js'
 import { createOptionalApiKeyMiddleware, resolveHttpApiKey } from './http-auth.js'
@@ -144,9 +145,47 @@ export async function startHttpServer(options: HttpServerOptions): Promise<void>
     }
   })
 
-  app.post('/admin/reload', (_req, res) => {
+  app.get('/admin/config', (_req, res) => {
     try {
-      const result = reloadAppDataWithMeta()
+      const data = readAppData()
+      res.json({
+        ok: true,
+        config: getDefaultConfigPath(),
+        data
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      res.status(500).json({ ok: false, error: message })
+    }
+  })
+
+  app.put('/admin/config', async (req, res) => {
+    if (!isConfigWriteEnabled()) {
+      res.status(403).json({
+        ok: false,
+        error: '配置 API 写入已禁用（MIDDLE_TOOL_CONFIG_WRITE=0）'
+      })
+      return
+    }
+
+    try {
+      const result = await updateAppDataFromInput(req.body)
+      res.json({
+        ok: true,
+        updatedAt: result.reloadedAt,
+        config: result.configPath,
+        environments: result.data.environments.length,
+        connections: result.data.connections.length
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      res.status(400).json({ ok: false, error: message })
+    }
+  })
+
+  app.post('/admin/reload', async (_req, res) => {
+    try {
+      const result = await reloadAppDataWithMeta()
       res.json({
         ok: true,
         reloadedAt: result.reloadedAt,
@@ -272,6 +311,8 @@ export async function startHttpServer(options: HttpServerOptions): Promise<void>
   console.error(`Connections API: ${baseUrl}/api/connections`)
   console.error(`Connection status API: ${baseUrl}/api/connections/status`)
   console.error(`Config reload API: POST ${baseUrl}/admin/reload`)
+  console.error(`Config read API: GET ${baseUrl}/admin/config`)
+  console.error(`Config write API: PUT ${baseUrl}/admin/config`)
   if (apiKey) {
     console.error('HTTP API Key: enabled (Authorization: Bearer or X-API-Key)')
   }

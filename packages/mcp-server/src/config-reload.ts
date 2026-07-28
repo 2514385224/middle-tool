@@ -1,7 +1,15 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { getDefaultConfigPath, readAppData, reloadAppData, type AppData } from './config-reader.js'
+import {
+  getDefaultConfigPath,
+  parseAppDataInput,
+  readAppData,
+  reloadAppData,
+  writeAppData,
+  type AppData
+} from './config-reader.js'
+import { applyConfigReloadSideEffects } from './config-side-effects.js'
 
 let watcherStarted = false
 let debounceTimer: NodeJS.Timeout | undefined
@@ -10,23 +18,29 @@ function isConfigWatchEnabled(): boolean {
   return process.env.MIDDLE_TOOL_CONFIG_WATCH !== '0'
 }
 
+async function runConfigReload(onReload?: (data: AppData) => void): Promise<AppData> {
+  const filePath = getDefaultConfigPath()
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`配置文件不存在: ${filePath}`)
+  }
+  const data = reloadAppData()
+  await applyConfigReloadSideEffects()
+  onReload?.(data)
+  return data
+}
+
 function scheduleConfigReload(onReload?: (data: AppData) => void): void {
   clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => {
-    try {
-      const filePath = getDefaultConfigPath()
-      if (!fs.existsSync(filePath)) {
-        console.error(`[middle-tool] 配置热重载跳过：文件不存在 ${filePath}`)
-        return
-      }
-      const data = reloadAppData()
-      console.error(
-        `[middle-tool] 配置已热重载: ${filePath} · ${data.environments.length} 环境 · ${data.connections.length} 连接`
-      )
-      onReload?.(data)
-    } catch (err) {
-      console.error('[middle-tool] 配置热重载失败:', err instanceof Error ? err.message : err)
-    }
+    void runConfigReload(onReload)
+      .then((data) => {
+        console.error(
+          `[middle-tool] 配置已热重载: ${getDefaultConfigPath()} · ${data.environments.length} 环境 · ${data.connections.length} 连接`
+        )
+      })
+      .catch((err) => {
+        console.error('[middle-tool] 配置热重载失败:', err instanceof Error ? err.message : err)
+      })
   }, 300)
 }
 
@@ -52,13 +66,33 @@ export function startConfigFileWatcher(onReload?: (data: AppData) => void): void
   }
 }
 
-export function reloadAppDataWithMeta(configPath?: string): {
+export async function reloadAppDataWithMeta(configPath?: string): Promise<{
   data: AppData
   reloadedAt: string
   configPath: string
-} {
+}> {
   const resolved = path.resolve(configPath ?? getDefaultConfigPath())
   const data = reloadAppData(resolved)
+  await applyConfigReloadSideEffects()
+  return {
+    data,
+    reloadedAt: new Date().toISOString(),
+    configPath: resolved
+  }
+}
+
+export async function updateAppDataFromInput(
+  input: unknown,
+  configPath?: string
+): Promise<{
+  data: AppData
+  reloadedAt: string
+  configPath: string
+}> {
+  const parsed = parseAppDataInput(input)
+  const resolved = writeAppData(parsed, configPath)
+  const data = reloadAppData(resolved)
+  await applyConfigReloadSideEffects()
   return {
     data,
     reloadedAt: new Date().toISOString(),

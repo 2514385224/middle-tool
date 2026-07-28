@@ -1,17 +1,15 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { homedir } from 'node:os'
-import { fileURLToPath } from 'node:url'
 
 import { app, dialog, type BrowserWindow } from 'electron'
 
-import { getMcpServerDefaultJarPath, isDefaultConfigPath } from '../../../shared/mcp-export'
-import { resolveBundledJar } from '../../../shared/rocketmq-bridge'
+import { buildMcpHttpUrl } from '../../../shared/mcp-export'
+import type { AppSettings } from '../../../shared/types/settings'
+import { normalizeAppSettings } from '../../../shared/types/settings'
 import type { McpExportMeta, UvxDetectResult } from '../../../shared/types/mcp'
 import { ConfigStore } from './config-store'
 import { detectUvx } from './uvx-detector'
-
-const MAIN_DIRNAME = path.dirname(fileURLToPath(import.meta.url))
 
 export class McpManager {
   private configStore: ConfigStore
@@ -20,84 +18,54 @@ export class McpManager {
     this.configStore = configStore
   }
 
-  private resolvePackageRoot(packageName: string): string {
-    return app.isPackaged
-      ? path.join(process.resourcesPath, packageName)
-      : path.join(app.getAppPath(), 'packages', packageName)
-  }
-
-  private resolveRocketmqJar(mcpServerRoot: string): string {
-    const fromBridge = resolveBundledJar({
-      isPackaged: app.isPackaged,
-      appPath: app.getAppPath(),
-      resourcesPath: process.resourcesPath,
-      packageRoot: mcpServerRoot,
-      mainDirname: MAIN_DIRNAME
-    })
-    if (fromBridge) return fromBridge
-
-    const candidates = [
-      getMcpServerDefaultJarPath(mcpServerRoot),
-      path.join(this.resolvePackageRoot('rocketmq-mcp-server'), 'runtime', 'rocketmq-mcp.jar')
-    ]
-    return candidates.find((p) => fs.existsSync(p)) ?? candidates[0]
-  }
-
   private hasEnabledConnection(type: string): boolean {
     return this.configStore.listConnections().some((c) => c.type === type && c.enabled)
   }
 
-  private buildDynamicEnv(mcpServerRoot: string, uvx: UvxDetectResult): Record<string, string> {
-    const env: Record<string, string> = {}
-    const configPath = this.configStore.getConfigPath()
-
-    if (!isDefaultConfigPath(configPath)) {
-      env.MIDDLE_TOOL_CONFIG_PATH = configPath
-    }
-
-    if (this.hasEnabledConnection('rocketmq')) {
-      const defaultJar = getMcpServerDefaultJarPath(mcpServerRoot)
-      const resolvedJar = this.resolveRocketmqJar(mcpServerRoot)
-      if (!fs.existsSync(defaultJar) || path.normalize(resolvedJar) !== path.normalize(defaultJar)) {
-        env.ROCKETMQ_MCP_JAR_PATH = resolvedJar
-      }
-    }
-
-    if (this.hasEnabledConnection('redis') && uvx.path) {
-      env.REDIS_MCP_COMMAND = uvx.path
-    }
-
-    return env
-  }
-
-  private buildExportNotes(env: Record<string, string>, uvx: UvxDetectResult): string[] {
+  private buildExportNotes(uvx: UvxDetectResult, settings: AppSettings): string[] {
     const notes: string[] = []
+    const url = buildMcpHttpUrl(
+      settings.mcpHttpHost ?? '127.0.0.1',
+      settings.mcpHttpPort ?? 8080,
+      settings.mcpHttpPath ?? '/mcp'
+    )
 
-    if (!this.hasEnabledConnection('rocketmq') && !this.hasEnabledConnection('redis')) {
-      notes.push('当前无 RocketMQ / Redis 连接，仅需启动路径即可。')
+    notes.push(`HTTP MCP：Cursor 仅需 url 指向已启动的 MCP 服务（当前示例 ${url}）。`)
+    notes.push('连接配置由服务端 middle-tool-config.json 读取；改连接后 POST /admin/reload 或重启服务。')
+
+    if (settings.mcpHttpApiKey) {
+      notes.push('已写入 Authorization Bearer 请求头（与服务端 MIDDLE_TOOL_MCP_API_KEY 对应）。')
     }
-
-    if (this.hasEnabledConnection('rocketmq') && !env.ROCKETMQ_MCP_JAR_PATH) {
-      notes.push('RocketMQ：JAR 已在默认 runtime 目录，无需额外 env。')
-    }
-
     if (this.hasEnabledConnection('redis')) {
-      if (uvx.path) {
-        notes.push(
-          uvx.inPath
-            ? `Redis：已写入 REDIS_MCP_COMMAND=${uvx.path}（确保 Cursor 子进程可找到 uvx）。`
-            : `Redis：已写入 REDIS_MCP_COMMAND=${uvx.path}（uvx 不在 PATH）。`
-        )
-      } else {
-        notes.push(`Redis：未检测到 uvx，请先安装。安装命令见下方，安装后点击「重新检测」。`)
-      }
+      notes.push(
+        uvx.installed
+          ? 'Redis：uvx 需安装在运行 HTTP MCP 服务的环境（本地或 Linux/Docker），非 Cursor 侧。'
+          : 'Redis：运行 MCP 服务的环境需安装 uvx；本机检测未就绪时请先安装。'
+      )
     }
-
-    if (!env.MIDDLE_TOOL_CONFIG_PATH) {
-      notes.push('连接配置从默认路径 %APPDATA%\\middle-tool\\middle-tool-config.json 读取。')
+    if (this.hasEnabledConnection('rocketmq')) {
+      notes.push('RocketMQ：JAR 与 Java 需在运行 HTTP MCP 服务的环境可用。')
     }
 
     return notes
+  }
+
+  private exportHttpMcpConfig(settings: AppSettings): string {
+    const url = buildMcpHttpUrl(
+      settings.mcpHttpHost ?? '127.0.0.1',
+      settings.mcpHttpPort ?? 8080,
+      settings.mcpHttpPath ?? '/mcp'
+    )
+
+    const server: Record<string, unknown> = { url }
+
+    if (settings.mcpHttpApiKey) {
+      server.headers = {
+        Authorization: `Bearer ${settings.mcpHttpApiKey}`
+      }
+    }
+
+    return JSON.stringify({ mcpServers: { 'middle-tool': server } }, null, 2)
   }
 
   detectUvx(): UvxDetectResult {
@@ -105,31 +73,22 @@ export class McpManager {
   }
 
   exportUnifiedMcpConfig(): string {
-    const middleToolRoot = this.resolvePackageRoot('mcp-server')
-    const uvx = detectUvx()
-    const middleToolEntry = path.join(middleToolRoot, 'dist', 'index.js')
-
-    const server: Record<string, unknown> = {
-      command: 'node',
-      args: [middleToolEntry]
-    }
-
-    const env = this.buildDynamicEnv(middleToolRoot, uvx)
-    if (Object.keys(env).length > 0) {
-      server.env = env
-    }
-
-    return JSON.stringify({ mcpServers: { 'middle-tool': server } }, null, 2)
+    const settings = normalizeAppSettings(this.configStore.getSettings())
+    return this.exportHttpMcpConfig(settings)
   }
 
   getExportMeta(): McpExportMeta {
-    const middleToolRoot = this.resolvePackageRoot('mcp-server')
+    const settings = normalizeAppSettings(this.configStore.getSettings())
     const uvx = detectUvx()
-    const env = this.buildDynamicEnv(middleToolRoot, uvx)
+    const httpUrl = buildMcpHttpUrl(
+      settings.mcpHttpHost ?? '127.0.0.1',
+      settings.mcpHttpPort ?? 8080,
+      settings.mcpHttpPath ?? '/mcp'
+    )
 
     return {
-      envKeys: Object.keys(env),
-      notes: this.buildExportNotes(env, uvx),
+      httpUrl,
+      notes: this.buildExportNotes(uvx, settings),
       usesRedis: this.hasEnabledConnection('redis'),
       uvx
     }
