@@ -8,7 +8,8 @@
 
 - **中间件连接**：按适配器 schema 配置连接，通过名称区分环境（如 prod-loki）
 - **中间件目录**：查看已注册的全部 MCP 适配器、连通性校验与上游仓库链接
-- **连接测试**：保存前可测试 Loki / MySQL / Redis / RocketMQ / Elasticsearch / MongoDB 连通性
+- **连接测试**：保存前可测试 Loki / MySQL / Redis / RocketMQ / Elasticsearch / MongoDB / Kubernetes 连通性
+- **环境配置**：Kubernetes 多环境配置管理（dev、sit、uat、prod）
 - **配置导入导出**：备份与迁移环境与连接
 - **MCP 配置导出**：生成 Cursor / Claude Desktop 可用的 `mcpServers` JSON，支持写入文件
 - **插件式架构**：新增中间件只需添加适配器文件并注册
@@ -23,6 +24,7 @@
 | Redis | 缓存 | 官方 redis/mcp-redis（uvx） | ✅ 可用 |
 | Elasticsearch | 日志/搜索 | 内置（兼容 [elasticsearch-mcp-server](https://github.com/cr7258/elasticsearch-mcp-server)） | ✅ 可用 |
 | MongoDB | 数据库 | 内置（兼容 [mcp-mongo-server](https://github.com/kiliczsh/mcp-mongo-server)） | ✅ 可用 |
+| Kubernetes | 容器编排 | 内置 `packages/kubernetes-mcp-server` | ✅ 可用 |
 | Apache Kafka | 消息队列 | [mcp-kafka](https://github.com/gAmUssA/mcp-kafka) | 🔜 规划中 |
 
 ## 技术栈
@@ -48,7 +50,8 @@ npm run dev
 ## 使用流程
 
 1. **中间件配置** — 选择适配器，用名称区分环境（如 prod-loki），配置连接参数
-2. **MCP 配置** — 导出 JSON 到 Cursor / Claude Desktop
+2. **Kubernetes 环境** — 配置多环境 K8s 集群连接（dev、sit、uat、prod）
+3. **MCP 配置** — 导出 JSON 到 Cursor / Claude Desktop
 
 ## MCP Server
 
@@ -56,7 +59,7 @@ MiddleTool 提供**单一 MCP Server** `middle-tool`，桌面端「MCP 配置」
 
 | Server | 包路径 | 能力 |
 |--------|--------|------|
-| `middle-tool` | `packages/mcp-server` | Loki、MySQL、Redis、RocketMQ、Elasticsearch、MongoDB 全部 tools |
+| `middle-tool` | `packages/mcp-server` | Loki、MySQL、Redis、RocketMQ、Elasticsearch、MongoDB、Kubernetes 全部 tools |
 
 ```json
 {
@@ -69,7 +72,7 @@ MiddleTool 提供**单一 MCP Server** `middle-tool`，桌面端「MCP 配置」
 }
 ```
 
-桌面端「MCP 配置」会根据已启用的 RocketMQ / Redis 连接自动补充 env。
+桌面端「MCP 配置」会根据已启用的 RocketMQ / Redis / Kubernetes 连接自动补充 env。
 
 RocketMQ 由 MiddleTool 桌面端 **内嵌托管 Java Admin 桥接**（安装包预置 JAR，用户无需单独部署）。
 
@@ -119,9 +122,10 @@ docker compose up -d --build
 ```
 MiddleTool/
 ├── packages/mcp-server/           # 统一 MCP（全部中间件 tools）
+├── packages/kubernetes-mcp-server/ # Kubernetes MCP Server
 ├── shared/types/                  # UI 与主进程共享类型
 ├── electron/main/adapters/        # 适配器注册与校验
-└── src/pages/                     # 概览、目录、配置、MCP 导出
+└── src/pages/                     # 概览、目录、配置、MCP 导出、环境配置
 ```
 
 ## 扩展新中间件
