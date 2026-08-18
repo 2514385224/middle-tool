@@ -1,0 +1,116 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: [20]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build MCP Server
+        run: npm run mcp:build
+
+      - name: Build RocketMQ Java Bridge (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: npm run rocketmq-mcp:java:stage
+
+      - name: Build RocketMQ Java Bridge (Windows)
+        if: matrix.os == 'windows-latest'
+        run: npm run rocketmq-mcp:java:stage
+
+      - name: Build RocketMQ Java Bridge (macOS)
+        if: matrix.os == 'macos-latest'
+        run: npm run rocketmq-mcp:java:stage
+
+      - name: Build Electron App (Windows)
+        if: matrix.os == 'windows-latest'
+        run: npm run build:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Electron App (macOS)
+        if: matrix.os == 'macos-latest'
+        run: npm run build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Linux MCP Bundle
+        if: matrix.os == 'ubuntu-latest'
+        run: npm run build:linux-mcp
+
+      - name: Upload Windows Artifact
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: release/*.exe
+
+      - name: Upload macOS Artifact
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: release/*.dmg
+
+      - name: Upload Linux MCP Artifact
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-mcp-bundle
+          path: release/*.tar.gz
+
+  create-release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: ./release
+
+      - name: Download macOS Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-dmg
+          path: ./release
+
+      - name: Download Linux MCP Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-mcp-bundle
+          path: ./release
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            release/*.exe
+            release/*.dmg
+            release/*.tar.gz
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
