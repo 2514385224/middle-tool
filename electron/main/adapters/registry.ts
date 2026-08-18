@@ -7,6 +7,7 @@ import { redisAdapter } from './redis'
 import { kafkaAdapter } from './kafka'
 import { elasticsearchAdapter } from './elasticsearch'
 import { mongodbAdapter } from './mongodb'
+import { kubernetesAdapter } from './kubernetes'
 
 /**
  * 适配器注册表
@@ -23,7 +24,8 @@ const ALL_ADAPTERS: McpAdapter[] = [
   redisAdapter,
   elasticsearchAdapter,
   mongodbAdapter,
-  kafkaAdapter
+  kafkaAdapter,
+  kubernetesAdapter
 ]
 
 const adapterMap = new Map<string, McpAdapter>(

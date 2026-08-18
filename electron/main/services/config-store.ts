@@ -86,7 +86,11 @@ export class ConfigStore {
   }
 
   deleteEnvironment(id: string): boolean {
-    const envs = this.listEnvironments().filter((e) => e.id !== id)
+    const current = this.listEnvironments()
+    if (current.length <= 1) {
+      throw new Error('至少保留一个环境，无法删除')
+    }
+    const envs = current.filter((e) => e.id !== id)
     const conns = this.listConnections().filter((c) => c.environmentId !== id)
     this.store.set('environments', envs)
     this.store.set('connections', conns)
@@ -111,7 +115,10 @@ export class ConfigStore {
   ): MiddlewareConnection {
     const environmentId = input.environmentId ?? this.getDefaultEnvironmentId()
     const duplicate = this.listConnections().find(
-      (c) => c.type === input.type && c.name === input.name.trim()
+      (c) =>
+        c.type === input.type &&
+        c.name === input.name.trim() &&
+        c.environmentId === environmentId
     )
     if (duplicate) {
       throw new Error(`已存在同名连接「${input.name}」，请使用不同名称`)
@@ -141,12 +148,18 @@ export class ConfigStore {
     const index = list.findIndex((c) => c.id === id)
     if (index === -1) return null
 
-    if (input.name) {
+    if (input.name || input.environmentId) {
+      const nextName = (input.name ?? list[index].name).trim()
+      const nextEnvId = input.environmentId ?? list[index].environmentId
       const duplicate = list.find(
-        (c) => c.id !== id && c.type === list[index].type && c.name === input.name!.trim()
+        (c) =>
+          c.id !== id &&
+          c.type === list[index].type &&
+          c.name === nextName &&
+          c.environmentId === nextEnvId
       )
       if (duplicate) {
-        throw new Error(`已存在同名连接「${input.name}」，请使用不同名称`)
+        throw new Error(`该环境下已存在同名连接「${nextName}」，请使用不同名称`)
       }
     }
 

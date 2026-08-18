@@ -27,6 +27,8 @@
     "mysql-mcp-server:start": "npm run start -w @middle-tool/mysql-mcp-server",
     "redis-mcp-server:build": "npm run build -w @middle-tool/redis-mcp-server",
     "redis-mcp-server:start": "npm run start -w @middle-tool/redis-mcp-server",
+    "kubernetes-mcp-server:build": "npm run build -w @middle-tool/kubernetes-mcp-server",
+    "kubernetes-mcp-server:start": "npm run start -w @middle-tool/kubernetes-mcp-server",
     "mcp:verify": "node scripts/verify-mcp.mjs",
     "postinstall": "npm run mcp:build"
   },

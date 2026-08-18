@@ -129,8 +129,9 @@ function convert(workspacePath, secretsPath) {
     const secretProject = secrets.projects?.[projectId] ?? {}
     for (const [profileId, profile] of Object.entries(project.profiles ?? {})) {
       const envId = randomUUID()
-      const envName = `${projectId}-${profileId}`
-      const label = `${PROJECT_LABELS[projectId] ?? projectId} ${PROFILE_LABELS[profileId] ?? profileId}`
+      const projectLabel = PROJECT_LABELS[projectId] ?? projectId
+      const envName = `${projectLabel}-${profileId}`
+      const label = `${projectLabel} ${PROFILE_LABELS[profileId] ?? profileId}`
 
       environments.push({
         id: envId,

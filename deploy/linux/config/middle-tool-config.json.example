@@ -2,7 +2,7 @@
   "environments": [
     {
       "id": "00000000-0000-4000-8000-000000000001",
-      "name": "broker-dev",
+      "name": "经纪商-dev",
       "description": "经纪商开发环境",
       "color": "#2563eb"
     }
@@ -12,7 +12,7 @@
       "id": "00000000-0000-4000-8000-000000000101",
       "environmentId": "00000000-0000-4000-8000-000000000001",
       "type": "redis",
-      "name": "broker-dev-redis",
+      "name": "经纪商-dev-redis",
       "enabled": true,
       "config": {
         "host": "192.168.3.25",

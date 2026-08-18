@@ -26,6 +26,17 @@
   padding: 11px 14px;
 }
 
+.conn-filter-label {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.conn-row-env {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--accent);
+}
+
 .conn-row + .conn-row {
   border-top: 1px solid var(--border-subtle);
 }

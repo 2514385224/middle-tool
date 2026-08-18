@@ -679,6 +679,107 @@ export function listMongodbConnectionSummaries(
   }
 }
 
+// --- Kubernetes ---
+
+export interface KubernetesCredentials {
+  kubeconfig?: string
+  context?: string
+  namespace?: string
+  inCluster?: boolean
+  deniedResources?: string[]
+  readOnly?: boolean
+  disableDestructive?: boolean
+  enabledTools?: string[]
+  disabledTools?: string[]
+  toolsets?: string[]
+  stateless?: boolean
+  logLevel?: number
+  logFile?: string
+  listOutput?: string
+  requireOAuth?: boolean
+  oauthAudience?: string
+  authorizationUrl?: string
+  skipJwtVerification?: boolean
+}
+
+export function getKubernetesCredentials(connection: MiddlewareConnection): KubernetesCredentials {
+  const config = connection.config
+
+  // 解析多行文本为数组
+  const parseMultiline = (value?: string): string[] => {
+    if (!value) return []
+    return value
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+  }
+
+  // 解析 denied_resources (格式: group/version/kind)
+  const deniedResources = parseMultiline(config.denied_resources)
+
+  return {
+    kubeconfig: config.kubeconfig?.trim() || undefined,
+    context: config.context?.trim() || undefined,
+    namespace: config.namespace?.trim() || undefined,
+    inCluster: config.inCluster === 'yes',
+    deniedResources,
+    readOnly: config.read_only === 'yes',
+    disableDestructive: config.disable_destructive === 'yes',
+    enabledTools: parseMultiline(config.enabled_tools),
+    disabledTools: parseMultiline(config.disabled_tools),
+    toolsets: parseMultiline(config.toolsets),
+    stateless: config.stateless === 'yes',
+    logLevel: config.log_level ? parseInt(config.log_level, 10) : undefined,
+    logFile: config.log_file?.trim() || undefined,
+    listOutput: config.list_output || 'json',
+    requireOAuth: config.require_oauth === 'yes',
+    oauthAudience: config.oauth_audience?.trim() || undefined,
+    authorizationUrl: config.authorization_url?.trim() || undefined,
+    skipJwtVerification: config.skip_jwt_verification === 'yes'
+  }
+}
+
+export function listKubernetesConnectionSummaries(
+  data: AppData,
+  opts?: { enabledOnly?: boolean; environmentName?: string }
+) {
+  const enabledOnly = opts?.enabledOnly !== false
+  const envId = opts?.environmentName
+    ? data.environments.find((e) => e.name === opts.environmentName)?.id
+    : undefined
+
+  if (opts?.environmentName && !envId) {
+    throw new Error(`未找到环境: ${opts.environmentName}`)
+  }
+
+  const connections = data.connections
+    .filter((c) => {
+      if (c.type !== 'kubernetes') return false
+      if (enabledOnly && !c.enabled) return false
+      if (envId && c.environmentId !== envId) return false
+      return true
+    })
+    .map((c) => {
+      const env = data.environments.find((e) => e.id === c.environmentId)
+      const creds = getKubernetesCredentials(c)
+      return {
+        id: c.id,
+        name: c.name,
+        environment: env?.name ?? '未知环境',
+        context: creds.context,
+        namespace: creds.namespace,
+        inCluster: creds.inCluster,
+        usage: `connection_id: "${c.id}"`
+      }
+    })
+
+  return {
+    total: connections.length,
+    default_connection_id: connections.length === 1 ? connections[0].id : null,
+    connections
+  }
+}
+
 /** 解析连接参数，单条同类型连接时自动使用 default_connection_id */
 export function resolveTypedConnection(
   data: AppData,

@@ -12,6 +12,7 @@ interface AppLayoutProps {
 const MAIN_NAV: { route: AppRoute; label: string; id: string }[] = [
   { route: { page: 'dashboard' }, label: '概览', id: 'dashboard' },
   { route: { page: 'middleware-catalog' }, label: '中间件目录', id: 'catalog' },
+  { route: { page: 'environment-config', view: 'list' }, label: '环境配置', id: 'environments' },
   { route: { page: 'middleware-config', view: 'list' }, label: '中间件配置', id: 'middleware' },
   { route: { page: 'mcp-export' }, label: 'MCP 配置', id: 'mcp' }
 ]

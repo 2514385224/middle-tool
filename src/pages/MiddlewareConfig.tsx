@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { AdapterMeta, MiddlewareConnection } from '../types'
 import { ADAPTER_STATUS_LABELS, isAdapterOperational } from '../types'
-import { useConnections } from '../hooks/useData'
+import { useConnections, useEnvironments } from '../hooks/useData'
 import ConnectionForm from '../components/connection/ConnectionForm'
 import { AdapterFilter, AdapterTypeSelect } from '../components/adapter/AdapterFilter'
 import '../components/adapter/AdapterFilter.css'
@@ -36,12 +36,15 @@ export default function MiddlewareConfig({
   onNavigate
 }: MiddlewareConfigProps) {
   const { connections, loading: connLoading, refresh } = useConnections()
+  const { environments, loading: envLoading } = useEnvironments()
   const [adapters, setAdapters] = useState<AdapterMeta[]>([])
   const [adaptersLoading, setAdaptersLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const [filterType, setFilterType] = useState<string>(initialType ?? '')
+  const [filterEnvironmentId, setFilterEnvironmentId] = useState<string>('')
   const [selectedType, setSelectedType] = useState(initialType ?? 'loki')
+  const [environmentId, setEnvironmentId] = useState('')
   const [name, setName] = useState('')
   const [config, setConfig] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
@@ -73,10 +76,18 @@ export default function MiddlewareConfig({
 
   const currentAdapter = adapterMap.get(selectedType) ?? availableAdapters[0]
 
+  const envNameById = useMemo(() => new Map(environments.map((e) => [e.id, e.name])), [environments])
+
   const filteredConnections = useMemo(() => {
-    if (!filterType) return connections
-    return connections.filter((c) => c.type === filterType)
-  }, [connections, filterType])
+    let list = connections
+    if (filterEnvironmentId) {
+      list = list.filter((c) => c.environmentId === filterEnvironmentId)
+    }
+    if (filterType) {
+      list = list.filter((c) => c.type === filterType)
+    }
+    return list
+  }, [connections, filterType, filterEnvironmentId])
 
   const groupedConnections = useMemo(() => {
     const groups = new Map<string, MiddlewareConnection[]>()
@@ -95,8 +106,9 @@ export default function MiddlewareConfig({
     const adapter = adapterMap.get(type)
     setSelectedType(type)
     setName('')
+    setEnvironmentId(environments[0]?.id ?? '')
     if (adapter) setConfig(buildDefaultConfig(adapter))
-  }, [view, initialType, adapters, adaptersLoading])
+  }, [view, initialType, adapters, adaptersLoading, environments])
 
   useEffect(() => {
     if (view !== 'edit' || !connectionId || connLoading) return
@@ -104,6 +116,7 @@ export default function MiddlewareConfig({
     if (conn) {
       setSelectedType(conn.type)
       setName(conn.name)
+      setEnvironmentId(conn.environmentId)
       setConfig({ ...conn.config })
     }
   }, [view, connectionId, connections, connLoading])
@@ -117,18 +130,18 @@ export default function MiddlewareConfig({
     onNavigate(middlewareConfigRoute('edit', { connectionId: conn.id, middlewareType: conn.type }))
 
   const handleSave = async () => {
-    if (!name.trim() || !currentAdapter) return
+    if (!name.trim() || !currentAdapter || !environmentId) return
     setSaving(true)
     setFormMessage(null)
     try {
       if (view === 'edit' && connectionId) {
-        await window.middleTool.conn.update(connectionId, { name, config })
+        await window.middleTool.conn.update(connectionId, { name, config, environmentId })
       } else {
         if (!isAdapterOperational(currentAdapter)) {
           setFormMessage({ kind: 'error', text: '该中间件尚未开放' })
           return
         }
-        await window.middleTool.conn.create({ type: selectedType, name, config })
+        await window.middleTool.conn.create({ type: selectedType, name, config, environmentId })
       }
       await refresh()
       goList()
@@ -351,6 +364,9 @@ export default function MiddlewareConfig({
 
         <ConnectionForm
           adapter={currentAdapter}
+          environments={environments}
+          environmentId={environmentId}
+          onEnvironmentChange={setEnvironmentId}
           name={name}
           config={config}
           onNameChange={setName}
@@ -375,7 +391,7 @@ export default function MiddlewareConfig({
     <div className="middleware-config-layout">
       <div className="page-header" style={{ marginBottom: 0 }}>
         <h2>中间件配置</h2>
-        <p>维护各中间件连接，通过连接名称区分环境（如 prod-loki、test-rocketmq）。</p>
+        <p>维护各中间件连接；每条连接需指定所属 environment，供 MCP 按环境调用。</p>
         <div className="page-actions">
           <button type="button" className="btn-secondary" onClick={handleExport} disabled={exporting}>
             {exporting ? '导出中…' : '导出配置'}
@@ -443,7 +459,29 @@ export default function MiddlewareConfig({
         onFilterTypeChange={setFilterType}
       />
 
-      {filteredConnections.length === 0 ? (
+      {environments.length > 0 && (
+        <div className="conn-filters">
+          <label className="conn-filter-label" htmlFor="conn-env-filter">
+            环境筛选
+          </label>
+          <select
+            id="conn-env-filter"
+            value={filterEnvironmentId}
+            onChange={(e) => setFilterEnvironmentId(e.target.value)}
+          >
+            <option value="">全部环境</option>
+            {environments.map((env) => (
+              <option key={env.id} value={env.id}>
+                {env.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {envLoading && environments.length === 0 ? (
+        <div className="mcp-loading">加载环境…</div>
+      ) : filteredConnections.length === 0 ? (
         <div className="empty-config-hint">
           <div className="empty-config-hint-label">No connections</div>
           <p>尚无中间件连接</p>
@@ -471,6 +509,9 @@ export default function MiddlewareConfig({
                   <li key={conn.id} className="conn-row">
                     <div className="conn-row-main">
                       <span className="conn-row-name">{conn.name}</span>
+                      <span className="conn-row-env">
+                        {envNameById.get(conn.environmentId) ?? '未知环境'}
+                      </span>
                       {adapter && getConnectionPreview(adapter, conn.config) && (
                         <code className="conn-row-preview">
                           {getConnectionPreview(adapter, conn.config)}

@@ -42,3 +42,9 @@ deploy/docker/config/middle-tool-config.json
 packages/rocketmq-mcp-server/vendor/
 packages/rocketmq-mcp-server/runtime/*.jar
 packages/mcp-server/runtime/*.jar
+
+# Kubernetes configs (may contain secrets)
+config-k8s*.yaml
+
+# Logs directory
+logs/

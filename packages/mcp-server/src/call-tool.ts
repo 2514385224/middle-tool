@@ -6,6 +6,7 @@ import {
   getRedisCredentials,
   getRocketmqCredentials,
   listElasticsearchConnectionSummaries,
+  listKubernetesConnectionSummaries,
   listMongodbConnectionSummaries,
   listMysqlConnectionSummaries,
   listRedisConnectionSummaries,
@@ -36,6 +37,7 @@ import {
 } from './redis-proxy.js'
 import * as rocketmq from './rocketmq-admin-client.js'
 import { assertMcpWriteAllowed } from './tool-policy.js'
+import { handleKubernetesToolCall, isKubernetesTool } from './kubernetes-proxy.js'
 
 type ToolResult = {
   content: Array<{ type: string; text?: string; [key: string]: unknown }>
@@ -441,6 +443,9 @@ export async function handleToolCall(name: string, args: Record<string, unknown>
       )
     }
     default:
+      if (isKubernetesTool(name)) {
+        return await handleKubernetesToolCall(name, args)
+      }
       throw new Error(`未知工具: ${name}`)
   }
 }

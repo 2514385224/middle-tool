@@ -2,6 +2,11 @@
 export type AppRoute =
   | { page: 'dashboard' }
   | {
+      page: 'environment-config'
+      view: 'list' | 'create' | 'edit'
+      environmentId?: string
+    }
+  | {
       page: 'middleware-config'
       view: 'list' | 'create' | 'edit'
       middlewareType?: string
@@ -9,6 +14,17 @@ export type AppRoute =
     }
   | { page: 'middleware-catalog' }
   | { page: 'mcp-export' }
+
+export function environmentConfigRoute(
+  view: 'list' | 'create' | 'edit' = 'list',
+  opts?: { environmentId?: string }
+): AppRoute {
+  return {
+    page: 'environment-config',
+    view,
+    environmentId: opts?.environmentId
+  }
+}
 
 export function middlewareConfigRoute(
   view: 'list' | 'create' | 'edit' = 'list',
